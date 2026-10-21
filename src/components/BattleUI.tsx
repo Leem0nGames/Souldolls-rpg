@@ -4,6 +4,7 @@ import { TYPE_COLORS } from '../game/data/typesChart';
 import { combatEngine } from '../game/combat/CombatEngine';
 import { sound } from '../game/audio/SoundEffects';
 import { Move, Item } from '../types/game';
+import { battleVfx, BattleSide } from '../game/graphics/BattleVfx';
 import { Sword, Briefcase, Users, LogOut, Sparkles, Heart, Zap, ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react';
 
 export const BattleUI: React.FC = () => {
@@ -76,9 +77,39 @@ export const BattleUI: React.FC = () => {
       battle.log.push(announce);
       setCurrentMessage(announce);
       gameStore.setState({ battleState: { ...battle } });
-      await new Promise(r => setTimeout(r, 1100));
+      await new Promise(r => setTimeout(r, 520));
 
+      // Combat resolution stays in the CombatEngine (no visual dependency).
       const res = combatEngine.calculateDamage(attacker, defender, selectedMove);
+
+      // Rolls that the visual layer must know about (to stay truthful).
+      const statusApplied =
+        selectedMove.statusEffect &&
+        Math.random() * 100 < selectedMove.statusEffect.chance &&
+        !defender.status
+          ? selectedMove.statusEffect.condition
+          : null;
+      const healAmount = selectedMove.healRatio
+        ? Math.floor(attacker.maxHp * selectedMove.healRatio)
+        : 0;
+
+      const attackerSide: BattleSide = isAttackerPlayer ? 'player' : 'opponent';
+      const defenderSide: BattleSide = isAttackerPlayer ? 'opponent' : 'player';
+
+      // The visual layer plays anticipation -> travel -> impact and resolves
+      // on the impact frame, so HP is applied exactly when the hit lands.
+      await battleVfx.playAttack({
+        move: selectedMove,
+        attacker: attackerSide,
+        defender: defenderSide,
+        damage: res.damage,
+        isCrit: res.isCrit,
+        typeMultiplier: res.typeMultiplier,
+        statusApplied,
+        healedAmount: healAmount,
+      });
+
+      // --- Impact frame: results are applied here ---
       defender.currentHp = Math.max(0, defender.currentHp - res.damage);
 
       if (res.typeMultiplier >= 2.0) {
@@ -101,23 +132,23 @@ export const BattleUI: React.FC = () => {
         battle.log.push('¡Un golpe crítico!');
       }
 
-      if (selectedMove.statusEffect && Math.random() * 100 < selectedMove.statusEffect.chance && !defender.status) {
-        defender.status = selectedMove.statusEffect.condition;
-        battle.log.push(`¡${defender.nickname} sufre de ${selectedMove.statusEffect.condition}!`);
+      if (statusApplied) {
+        defender.status = statusApplied;
+        battle.log.push(`¡${defender.nickname} sufre de ${statusApplied}!`);
       }
 
       if (selectedMove.healRatio) {
-        const healAmt = Math.floor(attacker.maxHp * selectedMove.healRatio);
-        attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + healAmt);
+        attacker.currentHp = Math.min(attacker.maxHp, attacker.currentHp + healAmount);
         sound.playHeal();
-        battle.log.push(`¡${attacker.nickname} recuperó ${healAmt} puntos de salud!`);
+        battle.log.push(`¡${attacker.nickname} recuperó ${healAmount} puntos de salud!`);
       }
 
       setCurrentMessage(battle.log[battle.log.length - 1]);
       gameStore.setState({ battleState: { ...battle } });
-      await new Promise(r => setTimeout(r, 1200));
+      await new Promise(r => setTimeout(r, 1150));
 
       if (defender.currentHp <= 0) {
+        battleVfx.playFaint(defenderSide);
         sound.playFaint();
         battle.log.push(`¡${defender.nickname} cayó debilitado!`);
         setCurrentMessage(`¡${defender.nickname} cayó debilitado!`);
@@ -250,6 +281,14 @@ export const BattleUI: React.FC = () => {
         await new Promise(r => setTimeout(r, 1000));
 
         const res = combatEngine.calculateDamage(opponentDoll, playerDoll, oppMove);
+        await battleVfx.playAttack({
+          move: oppMove,
+          attacker: 'opponent',
+          defender: 'player',
+          damage: res.damage,
+          isCrit: res.isCrit,
+          typeMultiplier: res.typeMultiplier,
+        });
         playerDoll.currentHp = Math.max(0, playerDoll.currentHp - res.damage);
         sound.playHit();
         gameStore.setState({ battleState: { ...battle } });
@@ -279,6 +318,7 @@ export const BattleUI: React.FC = () => {
 
     triggerHaptic(20);
     sound.playSelect();
+    battleVfx.playRecall('player');
     battle.playerActiveIndex = index;
     battle.log.push(`¡Regresa, ${playerDoll.nickname}! ¡Adelante, ${target.nickname}!`);
     setCurrentMessage(`¡Adelante, ${target.nickname}!`);

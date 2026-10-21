@@ -4,6 +4,8 @@ import { ecs } from '../ecs/World';
 import { gameStore, GameState } from '../state/useGameStore';
 import { createSoulDoll } from '../data/souldolls';
 import { sound } from '../audio/SoundEffects';
+import { BattleVfxDirector } from './BattleVfxDirector';
+import { battleVfx } from './BattleVfx';
 
 export class LuminatiRenderer {
   private container: HTMLElement;
@@ -13,12 +15,16 @@ export class LuminatiRenderer {
   private clock: THREE.Clock = new THREE.Clock();
   private frameId = 0;
   private isDestroyed = false;
+  private isSoftwareGl = false;
 
   // Scene Groups
   private worldGroup = new THREE.Group();
   private entitiesGroup = new THREE.Group();
   private battleGroup = new THREE.Group();
   private vfxGroup = new THREE.Group();
+
+  // Battle VFX
+  private vfxDirector!: BattleVfxDirector;
 
   // References
   private playerSprite!: THREE.Sprite;
@@ -61,6 +67,7 @@ export class LuminatiRenderer {
       gl.getExtension('WEBGL_lose_context')?.loseContext();
       return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
     })();
+    this.isSoftwareGl = isSoftwareGl;
 
     // 1. Renderer Setup
     this.renderer = new THREE.WebGLRenderer({
@@ -113,7 +120,8 @@ export class LuminatiRenderer {
     this.scene.add(this.worldGroup);
     this.scene.add(this.entitiesGroup);
     this.scene.add(this.battleGroup);
-    this.scene.add(this.vfxGroup);
+    // NOTE: the VFX group is parented to the battle arena (see buildBattleArena)
+    // so every effect is authored in arena local space (Y = -50 offset included).
 
     // Build World Geometry & Entities
     this.buildTerrain();
@@ -122,6 +130,15 @@ export class LuminatiRenderer {
     this.buildWildGrassZones();
     this.buildBattleArena();
     this.initEcsEntities();
+
+    // Battle visual effects (driven by this renderer's own tick)
+    this.vfxDirector = new BattleVfxDirector(
+      this.vfxGroup,
+      this.battlePlayerDollSprite,
+      this.battleOpponentDollSprite,
+      this.isSoftwareGl
+    );
+    battleVfx.registerSink(this.vfxDirector);
 
     // Resize listener
     window.addEventListener('resize', this.onResize);
@@ -532,6 +549,10 @@ export class LuminatiRenderer {
     arenaLight.position.set(0, 8, 0);
     this.battleArenaPlatform.add(arenaLight);
 
+    // Battle VFX live inside the arena group so they share its transform
+    // (the arena is offset to Y = -50) and the sprites' local space.
+    this.battleArenaPlatform.add(this.vfxGroup);
+
     this.battleGroup.add(this.battleArenaPlatform);
   }
 
@@ -729,8 +750,13 @@ export class LuminatiRenderer {
     if (state.view === 'BATTLE') {
       this.updateBattleScene(delta, state);
     } else {
+      // Leaving the battle: drop every running effect.
+      this.vfxDirector.clear();
       this.updateOverworld(delta, state);
     }
+
+    // Battle VFX share this tick (no extra animation loop).
+    this.vfxDirector.update(delta);
 
     this.renderer.render(this.scene, this.camera);
   };
@@ -997,6 +1023,8 @@ export class LuminatiRenderer {
       this.unsubscribePlayerSprite();
     }
     window.removeEventListener('resize', this.onResize);
+    battleVfx.unregisterSink(this.vfxDirector);
+    this.vfxDirector.dispose();
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement) {
       this.renderer.domElement.parentElement.removeChild(this.renderer.domElement);
