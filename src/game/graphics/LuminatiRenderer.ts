@@ -6,6 +6,7 @@ import { createSoulDoll } from '../data/souldolls';
 import { sound } from '../audio/SoundEffects';
 import { BattleVfxDirector } from './BattleVfxDirector';
 import { battleVfx } from './BattleVfx';
+import { buildOverworldMap, isBlocked } from './OverworldTiles';
 
 export class LuminatiRenderer {
   private container: HTMLElement;
@@ -32,13 +33,15 @@ export class LuminatiRenderer {
   private unsubscribePlayerSprite?: () => void;
   private unsubscribeSoulDollSprite?: () => void;
   private shrineCrystal!: THREE.Mesh;
-  private wildGrassMeshes: THREE.Sprite[] = [];
   private tamerSprites: { sprite: THREE.Sprite; entityId: number }[] = [];
 
   // Battle 3D Sprites
   private battlePlayerDollSprite!: THREE.Sprite;
   private battleOpponentDollSprite!: THREE.Sprite;
   private battleArenaPlatform!: THREE.Group;
+
+  // Overworld
+  private groundMaterial!: THREE.MeshLambertMaterial;
 
   // Camera settings
   private targetCameraPos = new THREE.Vector3(0, 8, 11);
@@ -126,10 +129,9 @@ export class LuminatiRenderer {
     // Build World Geometry & Entities
     this.buildTerrain();
     this.buildSanctuaryShrine();
-    this.buildForestFoliage();
-    this.buildWildGrassZones();
     this.buildBattleArena();
     this.initEcsEntities();
+    this.loadOverworldMap();
 
     // Battle visual effects (driven by this renderer's own tick)
     this.vfxDirector = new BattleVfxDirector(
@@ -148,77 +150,34 @@ export class LuminatiRenderer {
   }
 
   /**
-   * Builds the 3D diorama terrain with cobblestone paths and green meadows
+   * Builds the overworld ground plane. The pixel art map (tiles, transitions
+   * and decorations) is baked asynchronously and applied as its texture.
    */
   private buildTerrain() {
-    // 1. Main grass terrain base
-    const terrainGeo = new THREE.PlaneGeometry(60, 60, 32, 32);
-    const terrainMat = new THREE.MeshStandardMaterial({
-      color: '#166534',
-      roughness: 0.85,
-      metalness: 0.05,
-    });
-    const terrain = new THREE.Mesh(terrainGeo, terrainMat);
+    this.groundMaterial = new THREE.MeshLambertMaterial({ color: '#166534' });
+    const terrain = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), this.groundMaterial);
     terrain.rotation.x = -Math.PI / 2;
     terrain.receiveShadow = true;
     this.worldGroup.add(terrain);
+  }
 
-    // 2. Cobblestone crossroad paths
-    const pathMat = new THREE.MeshStandardMaterial({
-      color: '#334155',
-      roughness: 0.9,
-      metalness: 0.1,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    });
-
-    // North-South Path
-    const nsPath = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 50), pathMat);
-    nsPath.rotation.x = -Math.PI / 2;
-    nsPath.position.y = 0.02;
-    nsPath.receiveShadow = true;
-    this.worldGroup.add(nsPath);
-
-    // East-West Path
-    const ewPath = new THREE.Mesh(new THREE.PlaneGeometry(40, 3.5), pathMat);
-    ewPath.rotation.x = -Math.PI / 2;
-    ewPath.position.y = 0.02;
-    ewPath.receiveShadow = true;
-    this.worldGroup.add(ewPath);
-
-    // Central circular plaza around shrine
-    const plazaMat = new THREE.MeshStandardMaterial({
-      color: '#475569',
-      roughness: 0.8,
-      metalness: 0.15,
-      polygonOffset: true,
-      polygonOffsetFactor: -1.5,
-      polygonOffsetUnits: -1.5,
-    });
-    const plaza = new THREE.Mesh(new THREE.CircleGeometry(5.5, 32), plazaMat);
-    plaza.rotation.x = -Math.PI / 2;
-    plaza.position.y = 0.03;
-    plaza.receiveShadow = true;
-    this.worldGroup.add(plaza);
-
-    // Boundary rock cliffs (natural outdoor perimeters)
-    const rockMat = new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: 0.9 });
-    for (let i = 0; i < 28; i++) {
-      const angle = (i / 28) * Math.PI * 2;
-      const radius = 26 + (Math.sin(i * 3) * 1.5);
-      const rx = Math.cos(angle) * radius;
-      const rz = Math.sin(angle) * radius;
-
-      const rock = new THREE.Mesh(
-        new THREE.DodecahedronGeometry(1.6 + (i % 3) * 0.5),
-        rockMat
-      );
-      rock.position.set(rx, 1.2, rz);
-      rock.rotation.set(i * 0.4, i * 0.8, 0);
-      rock.castShadow = true;
-      rock.receiveShadow = true;
-      this.worldGroup.add(rock);
+  /**
+   * Bakes the tilemap and applies it to the ground. The world stays playable
+   * while the tiles are loading.
+   */
+  private async loadOverworldMap(): Promise<void> {
+    try {
+      const map = await buildOverworldMap();
+      if (this.isDestroyed) {
+        map.texture.dispose();
+        return;
+      }
+      this.groundMaterial.map = map.texture;
+      this.groundMaterial.color.set('#ffffff');
+      this.groundMaterial.needsUpdate = true;
+    } catch (error) {
+      // Keep the flat green ground if the tiles cannot be loaded.
+      console.warn('[Luminati] No se pudo cargar el mapa de tiles:', error);
     }
   }
 
@@ -228,6 +187,8 @@ export class LuminatiRenderer {
   private buildSanctuaryShrine() {
     const shrine = new THREE.Group();
     shrine.position.set(0, 0, -4);
+    // Scaled to the tile size of the new overworld (1 tile = 1.5 world units).
+    shrine.scale.setScalar(1.35);
 
     // 1. Stepped Stone Pedestal
     const step1 = new THREE.Mesh(
@@ -297,104 +258,6 @@ export class LuminatiRenderer {
     shrine.add(crystalLight);
 
     this.worldGroup.add(shrine);
-  }
-
-  /**
-   * Builds stylized 3D Trees (3-12 parts: trunk, layered canopy)
-   */
-  private buildForestFoliage() {
-    const treePositions = [
-      [-8, 0, -8], [-12, 0, -4], [-14, 0, 6], [-9, 0, 10],
-      [10, 0, -9], [13, 0, -3], [11, 0, 8], [8, 0, 12],
-      [-5, 0, 15], [6, 0, 16], [-15, 0, -12], [14, 0, -14]
-    ];
-
-    const trunkMat = new THREE.MeshStandardMaterial({ color: '#573312', roughness: 0.9 });
-    const leafMat1 = new THREE.MeshStandardMaterial({ color: '#15803d', roughness: 0.8 });
-    const leafMat2 = new THREE.MeshStandardMaterial({ color: '#16a34a', roughness: 0.85 });
-
-    treePositions.forEach(([x, y, z], i) => {
-      const tree = new THREE.Group();
-      tree.position.set(x, y, z);
-
-      // Trunk
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.45, 1.8, 6), trunkMat);
-      trunk.position.y = 0.9;
-      trunk.castShadow = true;
-      trunk.receiveShadow = true;
-      tree.add(trunk);
-
-      // Layer 1 Canopy
-      const l1 = new THREE.Mesh(new THREE.ConeGeometry(1.8, 2.0, 6), leafMat1);
-      l1.position.y = 2.2;
-      l1.castShadow = true;
-      tree.add(l1);
-
-      // Layer 2 Canopy
-      const l2 = new THREE.Mesh(new THREE.ConeGeometry(1.3, 1.6, 6), leafMat2);
-      l2.position.y = 3.1;
-      l2.castShadow = true;
-      tree.add(l2);
-
-      // Contact shadow disc
-      const shadowDisc = new THREE.Mesh(
-        new THREE.CircleGeometry(1.6, 12),
-        new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.35 })
-      );
-      shadowDisc.rotation.x = -Math.PI / 2;
-      shadowDisc.position.y = 0.01;
-      tree.add(shadowDisc);
-
-      this.worldGroup.add(tree);
-    });
-  }
-
-  /**
-   * Builds the Spirit Grass zones for wild encounters with billboard tufts
-   */
-  private buildWildGrassZones() {
-    const grassTexture = pixelGenerator.getSpiritGrassTexture();
-    const grassMat = new THREE.SpriteMaterial({
-      map: grassTexture,
-      transparent: true,
-      color: 0xffffff,
-    });
-
-    // Zone 1: West Spirit Glade (-18 to -6, -4 to 6)
-    // Zone 2: East Whispering Meadow (6 to 18, -4 to 6)
-    const zones = [
-      { minX: -16, maxX: -6, minZ: -3, maxZ: 7 },
-      { minX: 6, maxX: 16, minZ: -3, maxZ: 7 }
-    ];
-
-    zones.forEach(z => {
-      // Semi-transparent ground tint showing wild grass area
-      const patch = new THREE.Mesh(
-        new THREE.PlaneGeometry(z.maxX - z.minX, z.maxZ - z.minZ),
-        new THREE.MeshStandardMaterial({
-          color: '#064e3b',
-          roughness: 0.9,
-          polygonOffset: true,
-          polygonOffsetFactor: -1,
-          polygonOffsetUnits: -1,
-        })
-      );
-      patch.rotation.x = -Math.PI / 2;
-      patch.position.set((z.minX + z.maxX) / 2, 0.02, (z.minZ + z.maxZ) / 2);
-      this.worldGroup.add(patch);
-
-      // Scatter billboard grass sprites
-      for (let i = 0; i < 24; i++) {
-        const gx = z.minX + 0.8 + Math.random() * (z.maxX - z.minX - 1.6);
-        const gz = z.minZ + 0.8 + Math.random() * (z.maxZ - z.minZ - 1.6);
-
-        const sprite = new THREE.Sprite(grassMat.clone());
-        sprite.scale.set(1.4, 1.4, 1);
-        sprite.position.set(gx, 0.7, gz);
-        this.worldGroup.add(sprite);
-        this.wildGrassMeshes.push(sprite);
-      }
-    });
   }
 
   /**
@@ -655,7 +518,7 @@ export class LuminatiRenderer {
 
     const tamer1Tex = pixelGenerator.getTamerTexture('apprentice');
     const tamer1Sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tamer1Tex, transparent: true }));
-    tamer1Sprite.scale.set(2.0, 2.0, 1);
+    tamer1Sprite.scale.set(2.8, 2.8, 1);
     tamer1Sprite.position.set(-3.5, 1.0, -8);
     this.entitiesGroup.add(tamer1Sprite);
     this.tamerSprites.push({ sprite: tamer1Sprite, entityId: tamer1 });
@@ -676,7 +539,7 @@ export class LuminatiRenderer {
 
     const tamer2Tex = pixelGenerator.getTamerTexture('master');
     const tamer2Sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tamer2Tex, transparent: true }));
-    tamer2Sprite.scale.set(2.0, 2.0, 1);
+    tamer2Sprite.scale.set(2.8, 2.8, 1);
     tamer2Sprite.position.set(7.5, 1.0, -7);
     this.entitiesGroup.add(tamer2Sprite);
     this.tamerSprites.push({ sprite: tamer2Sprite, entityId: tamer2 });
@@ -741,11 +604,7 @@ export class LuminatiRenderer {
       this.shrineCrystal.position.y = 1.8 + Math.sin(this.clock.getElapsedTime() * 2) * 0.12;
     }
 
-    // Sway wild grass tufts gently
     const time = this.clock.getElapsedTime();
-    this.wildGrassMeshes.forEach((g, i) => {
-      g.rotation.z = Math.sin(time * 3 + i) * 0.08;
-    });
 
     if (state.view === 'BATTLE') {
       this.updateBattleScene(delta, state);
@@ -802,9 +661,16 @@ export class LuminatiRenderer {
           ctl.facing = dx > 0 ? 'right' : 'left';
         }
 
-        // Apply movement with bounds clamping
-        pos.x = THREE.MathUtils.clamp(pos.x + dx * currentSpeed, -24, 24);
-        pos.z = THREE.MathUtils.clamp(pos.z + dz * currentSpeed, -24, 24);
+        // Apply movement with bounds clamping and tree collision (slide).
+        const nextX = THREE.MathUtils.clamp(pos.x + dx * currentSpeed, -24, 24);
+        const nextZ = THREE.MathUtils.clamp(pos.z + dz * currentSpeed, -24, 24);
+        if (!isBlocked(nextX, nextZ)) {
+          pos.x = nextX;
+          pos.z = nextZ;
+        } else {
+          if (!isBlocked(nextX, pos.z)) pos.x = nextX;
+          if (!isBlocked(pos.x, nextZ)) pos.z = nextZ;
+        }
 
         // Update sprite position & 6-frame walk animation from spritesheet
         spr.animTimer += delta * (isSprinting ? 15 : 10);
