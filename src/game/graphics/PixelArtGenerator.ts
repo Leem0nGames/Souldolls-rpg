@@ -1,5 +1,14 @@
 import * as THREE from 'three';
 import { SOULDOLL_SPECIES } from '../data/souldolls';
+import {
+  BackgroundKey,
+  PLAYER_BACKGROUND,
+  SOULDOLL_BACKGROUND,
+  detectBackgroundColor,
+  hexToRgb,
+  removeBackground,
+  rgbToHex,
+} from './BackgroundKey';
 
 /**
  * PixelArtGenerator
@@ -9,6 +18,23 @@ class PixelArtGenerator {
   private cache: Map<string, THREE.CanvasTexture> = new Map();
   private playerSpritesheetLoaded = false;
   private onPlayerLoadedListeners: Array<() => void> = [];
+
+  /**
+   * Colour keys used to cut the backdrop of the character sheets.
+   * Change them here (or call setBackgroundKey) when new artwork is exported
+   * with a different flat colour.
+   */
+  private loggedBackground = false;
+  public soulDollBackground: BackgroundKey = { ...SOULDOLL_BACKGROUND };
+  public playerBackground: BackgroundKey = { ...PLAYER_BACKGROUND };
+
+  /**
+   * Sets the exact backdrop colour of the SoulDoll sheets.
+   * @param hex e.g. '#19191e'
+   */
+  public setSoulDollBackground(hex: string, tolerance = SOULDOLL_BACKGROUND.tolerance): void {
+    this.soulDollBackground = { ...this.soulDollBackground, color: hexToRgb(hex), tolerance };
+  }
 
   private soulDollSpritesheetLoaded = false;
   private loadedSheets: Array<{
@@ -149,7 +175,8 @@ class PixelArtGenerator {
   }
 
   /**
-   * Extracts, removes black background via connected edge flood-fill, and crops a SoulDoll half
+   * Extracts, removes the backdrop via an exact colour key, and crops a
+   * SoulDoll half.
    */
   private extractDollSprite(
     img: HTMLImageElement,
@@ -168,49 +195,20 @@ class PixelArtGenerator {
     const imgData = workCtx.getImageData(0, 0, workW, workH);
     const data = imgData.data;
 
-    // BFS Flood Fill from image outer borders to turn black background transparent
-    // (Preserves inner dark pixels/pupils/folds)
-    const visited = new Uint8Array(workW * workH);
-    const queue: number[] = [];
-
-    // Top and bottom borders
-    for (let x = 0; x < workW; x++) {
-      queue.push(x);
-      queue.push((workH - 1) * workW + x);
+    // Key on the exact backdrop colour: only the pixels that really match it
+    // are removed, so the dark parts of the character survive.
+    const key: BackgroundKey = {
+      ...this.soulDollBackground,
+      color: detectBackgroundColor(data, workW, workH),
+    };
+    if (!this.loggedBackground) {
+      this.loggedBackground = true;
+      console.info(
+        `[PixelArt] Fondo detectado: ${rgbToHex(key.color)} (tolerancia ${key.tolerance}). ` +
+          'Para exportar nuevas hojas usa ese color plano de fondo.'
+      );
     }
-    // Left and right borders
-    for (let y = 0; y < workH; y++) {
-      queue.push(y * workW);
-      queue.push(y * workW + (workW - 1));
-    }
-
-    let head = 0;
-    while (head < queue.length) {
-      const idx = queue[head++];
-      if (visited[idx]) continue;
-      visited[idx] = 1;
-
-      const pi = idx * 4;
-      const r = data[pi];
-      const g = data[pi + 1];
-      const b = data[pi + 2];
-      const maxVal = Math.max(r, g, b);
-
-      if (maxVal < 75) {
-        data[pi + 3] = 0; // Pure transparency for background
-
-        const x = idx % workW;
-        const y = Math.floor(idx / workW);
-
-        if (x > 0 && !visited[idx - 1]) queue.push(idx - 1);
-        if (x < workW - 1 && !visited[idx + 1]) queue.push(idx + 1);
-        if (y > 0 && !visited[idx - workW]) queue.push(idx - workW);
-        if (y < workH - 1 && !visited[idx + workW]) queue.push(idx + workW);
-      } else if (maxVal < 100) {
-        // Soft edge anti-aliasing against dark background halo
-        data[pi + 3] = Math.min(data[pi + 3], Math.round(((maxVal - 75) / 25) * 255));
-      }
-    }
+    removeBackground(data, workW, workH, key);
     workCtx.putImageData(imgData, 0, 0);
 
     // Find character bounding box
@@ -322,55 +320,12 @@ class PixelArtGenerator {
     const imgData = ctx.getImageData(0, 0, sw, sh);
     const data = imgData.data;
 
-    // Sample corner to check if background is white or black
-    const cornerR = data[0];
-    const cornerG = data[1];
-    const cornerB = data[2];
-    const isWhiteBg = cornerR > 200 && cornerG > 200 && cornerB > 200;
-    const isBlackBg = cornerR < 50 && cornerG < 50 && cornerB < 50;
-
-    if (isWhiteBg || isBlackBg) {
-      const visited = new Uint8Array(sw * sh);
-      const queue: number[] = [];
-
-      for (let x = 0; x < sw; x++) {
-        queue.push(x);
-        queue.push((sh - 1) * sw + x);
-      }
-      for (let y = 0; y < sh; y++) {
-        queue.push(y * sw);
-        queue.push(y * sw + (sw - 1));
-      }
-
-      let head = 0;
-      while (head < queue.length) {
-        const idx = queue[head++];
-        if (visited[idx]) continue;
-        visited[idx] = 1;
-
-        const pi = idx * 4;
-        const r = data[pi];
-        const g = data[pi + 1];
-        const b = data[pi + 2];
-
-        const matchesBg = isWhiteBg
-          ? (r > 190 && g > 190 && b > 190)
-          : (Math.max(r, g, b) < 65);
-
-        if (matchesBg) {
-          data[pi + 3] = 0; // Transparent
-
-          const x = idx % sw;
-          const y = Math.floor(idx / sw);
-
-          if (x > 0 && !visited[idx - 1]) queue.push(idx - 1);
-          if (x < sw - 1 && !visited[idx + 1]) queue.push(idx + 1);
-          if (y > 0 && !visited[idx - sw]) queue.push(idx - sw);
-          if (y < sh - 1 && !visited[idx + sw]) queue.push(idx + sw);
-        }
-      }
-      ctx.putImageData(imgData, 0, 0);
-    }
+    // The backdrop colour is measured from the frame border, so white, black
+    // or any other flat colour works without touching the code.
+    const detected = detectBackgroundColor(data, sw, sh, 2);
+    const key: BackgroundKey = { ...this.playerBackground, color: detected };
+    removeBackground(data, sw, sh, key);
+    ctx.putImageData(imgData, 0, 0);
 
     return { canvas, ctx };
   }
