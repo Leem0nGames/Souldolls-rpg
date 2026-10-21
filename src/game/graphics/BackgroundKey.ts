@@ -122,6 +122,32 @@ const x0 = (v: number, w: number) => v >= 0 && v < w;
 const y0 = (v: number, h: number) => v >= 0 && v < h;
 
 /**
+ * True when the source already carries a mask (a baked WebP or a PNG with
+ * alpha). In that case no keying is needed at all: the pixels are used as
+ * they come.
+ *
+ * The whole image is sampled instead of only its border, so a frame whose
+ * character touches the edge is still detected as already masked.
+ */
+export function hasTransparentBackground(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  sample = 4
+): boolean {
+  let transparent = 0;
+  let total = 0;
+  for (let y = 0; y < height; y += sample) {
+    for (let x = 0; x < width; x += sample) {
+      total++;
+      if (data[(y * width + x) * 4 + 3] < 250) transparent++;
+    }
+  }
+  // A real mask leaves a good part of the sheet empty.
+  return total > 0 && transparent / total > 0.01;
+}
+
+/**
  * Removes the backdrop from an RGBA buffer (in place).
  * The alpha channel is written: 0 for the backdrop, 255 for the character.
  */

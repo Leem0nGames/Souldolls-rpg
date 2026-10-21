@@ -5,6 +5,7 @@ import {
   PLAYER_BACKGROUND,
   SOULDOLL_BACKGROUND,
   detectBackgroundColor,
+  hasTransparentBackground,
   hexToRgb,
   removeBackground,
   rgbToHex,
@@ -98,13 +99,36 @@ class PixelArtGenerator {
     return 1.0;
   }
 
+  /**
+   * Loads the first candidate that works. The baked WebP (with alpha) is
+   * preferred; the original JPG is kept as a fallback and is keyed at runtime.
+   */
+  private loadFirstAvailable(
+    candidates: string[],
+    onLoad: (img: HTMLImageElement) => void,
+    onFail: (error: unknown) => void
+  ): void {
+    const attempt = (index: number) => {
+      if (index >= candidates.length) {
+        onFail(new Error(`No se pudo cargar: ${candidates.join(', ')}`));
+        return;
+      }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => onLoad(img);
+      img.onerror = (err) => attempt(index + 1);
+      img.src = candidates[index];
+    };
+    attempt(0);
+  }
+
   private initSoulDollSpritesheet() {
     if (typeof window === 'undefined') return;
 
-    const paths = [
-      '/assets/souldolls/493519213_1792589298660327.jpg',
-      '/assets/souldolls/647390299_1792589248743036.jpg',
-      '/assets/souldolls/837023740_1792589339474861.jpg'
+    const bases = [
+      '493519213_1792589298660327',
+      '647390299_1792589248743036',
+      '837023740_1792589339474861',
     ];
 
     let loadedCount = 0;
@@ -116,61 +140,50 @@ class PixelArtGenerator {
       avatarUrl: string;
     }> = [];
 
-    paths.forEach((path, idx) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        const w = img.width;
-        const h = img.height;
-        const halfW = Math.floor(w / 2);
-
-        const frontResult = this.extractDollSprite(img, halfW, 0, halfW, h);
-        const backResult = this.extractDollSprite(img, 0, 0, halfW, h);
-
-        const frontAspect = frontResult.canvas.width / frontResult.canvas.height;
-        const backAspect = backResult.canvas.width / backResult.canvas.height;
-
-        const frontTexture = this.makeTexture(`sheet_${idx}_front`, frontResult.canvas);
-        const backTexture = this.makeTexture(`sheet_${idx}_back`, backResult.canvas);
-        const avatarUrl = frontResult.canvas.toDataURL();
-
-        validSheets[idx] = {
-          frontTexture,
-          backTexture,
-          frontAspect,
-          backAspect,
-          avatarUrl
-        };
-
-        loadedCount++;
-        if (loadedCount === paths.length) {
-          this.loadedSheets = validSheets.filter(Boolean);
-          if (this.loadedSheets.length > 0) {
-            this.soulDollSpritesheetLoaded = true;
-            this.onSoulDollLoadedListeners.forEach(listener => {
-              try {
-                listener();
-              } catch (e) {
-                console.error(e);
-              }
-            });
-          }
+    const finish = () => {
+      loadedCount++;
+      if (loadedCount !== bases.length) return;
+      this.loadedSheets = validSheets.filter(Boolean);
+      if (this.loadedSheets.length === 0) return;
+      this.soulDollSpritesheetLoaded = true;
+      this.onSoulDollLoadedListeners.forEach(listener => {
+        try {
+          listener();
+        } catch (e) {
+          console.error(e);
         }
-      };
+      });
+    };
 
-      img.onerror = (err) => {
-        console.warn(`Could not load SoulDoll spritesheet from ${path}`, err);
-        loadedCount++;
-        if (loadedCount === paths.length) {
-          this.loadedSheets = validSheets.filter(Boolean);
-          if (this.loadedSheets.length > 0) {
-            this.soulDollSpritesheetLoaded = true;
-            this.onSoulDollLoadedListeners.forEach(listener => listener());
-          }
+    bases.forEach((base, idx) => {
+      this.loadFirstAvailable(
+        [`/assets/souldolls/${base}.webp`, `/assets/souldolls/${base}.jpg`],
+        (img) => {
+          const w = img.width;
+          const h = img.height;
+          const halfW = Math.floor(w / 2);
+
+          const frontResult = this.extractDollSprite(img, halfW, 0, halfW, h);
+          const backResult = this.extractDollSprite(img, 0, 0, halfW, h);
+
+          const frontAspect = frontResult.canvas.width / frontResult.canvas.height;
+          const backAspect = backResult.canvas.width / backResult.canvas.height;
+
+          validSheets[idx] = {
+            frontTexture: this.makeTexture(`sheet_${idx}_front`, frontResult.canvas),
+            backTexture: this.makeTexture(`sheet_${idx}_back`, backResult.canvas),
+            frontAspect,
+            backAspect,
+            avatarUrl: frontResult.canvas.toDataURL(),
+          };
+
+          finish();
+        },
+        (err) => {
+          console.warn(`Could not load SoulDoll spritesheet ${base}`, err);
+          finish();
         }
-      };
-
-      img.src = path;
+      );
     });
   }
 
@@ -195,20 +208,24 @@ class PixelArtGenerator {
     const imgData = workCtx.getImageData(0, 0, workW, workH);
     const data = imgData.data;
 
-    // Key on the exact backdrop colour: only the pixels that really match it
-    // are removed, so the dark parts of the character survive.
-    const key: BackgroundKey = {
-      ...this.soulDollBackground,
-      color: detectBackgroundColor(data, workW, workH),
-    };
-    if (!this.loggedBackground) {
-      this.loggedBackground = true;
-      console.info(
-        `[PixelArt] Fondo detectado: ${rgbToHex(key.color)} (tolerancia ${key.tolerance}). ` +
-          'Para exportar nuevas hojas usa ese color plano de fondo.'
-      );
+    // If the sheet already comes with a mask (baked WebP / PNG with alpha)
+    // there is nothing to key: the pixels are used as they are.
+    if (!hasTransparentBackground(data, workW, workH)) {
+      // Key on the exact backdrop colour: only the pixels that really match it
+      // are removed, so the dark parts of the character survive.
+      const key: BackgroundKey = {
+        ...this.soulDollBackground,
+        color: detectBackgroundColor(data, workW, workH),
+      };
+      if (!this.loggedBackground) {
+        this.loggedBackground = true;
+        console.info(
+          `[PixelArt] Fondo detectado: ${rgbToHex(key.color)} (tolerancia ${key.tolerance}). ` +
+            'Para exportar nuevas hojas usa ese color plano de fondo.'
+        );
+      }
+      removeBackground(data, workW, workH, key);
     }
-    removeBackground(data, workW, workH, key);
     workCtx.putImageData(imgData, 0, 0);
 
     // Find character bounding box
@@ -266,9 +283,10 @@ class PixelArtGenerator {
   private initPlayerSpritesheet() {
     if (typeof window === 'undefined') return;
 
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
+    const base = '831706773_1792592438332202';
+    this.loadFirstAvailable(
+      [`/assets/${base}.webp`, `/assets/${base}.jpg`],
+      (img) => {
       const cols = 6;
       const rows = 4;
       const frameWidth = Math.floor(img.width / cols);
@@ -298,13 +316,14 @@ class PixelArtGenerator {
           console.error(e);
         }
       });
-    };
-
-    img.onerror = (err) => {
-      console.warn('Could not load custom player spritesheet from /assets/831706773_1792592438332202.jpg, fallback active', err);
-    };
-
-    img.src = '/assets/831706773_1792592438332202.jpg';
+      },
+      (err) => {
+        console.warn(
+          `Could not load the player spritesheet (${base}), procedural fallback active`,
+          err
+        );
+      }
+    );
   }
 
   private extractPlayerFrame(
@@ -322,9 +341,11 @@ class PixelArtGenerator {
 
     // The backdrop colour is measured from the frame border, so white, black
     // or any other flat colour works without touching the code.
-    const detected = detectBackgroundColor(data, sw, sh, 2);
-    const key: BackgroundKey = { ...this.playerBackground, color: detected };
-    removeBackground(data, sw, sh, key);
+    if (!hasTransparentBackground(data, sw, sh, 2)) {
+      const detected = detectBackgroundColor(data, sw, sh, 2);
+      const key: BackgroundKey = { ...this.playerBackground, color: detected };
+      removeBackground(data, sw, sh, key);
+    }
     ctx.putImageData(imgData, 0, 0);
 
     return { canvas, ctx };
