@@ -177,6 +177,117 @@ function classifyMove(move: Move): EffectKind {
 }
 
 // ---------------------------------------------------------------------------
+// Move signatures
+// ---------------------------------------------------------------------------
+// Every move of MOVES_DATABASE gets its own recipe, so the player can tell
+// "Ember Breath" from "Inferno Surge" or "Zephyr Gust" from "Sky Slash"
+// without reading the text. The recipe only describes *how* the archetype of
+// the move is realised, the element still provides the colours and the
+// particles, so the whole set stays visually consistent.
+
+type TravelPath = 'straight' | 'arc' | 'spiral' | 'dash';
+type ImpactShape = 'burst' | 'wide' | 'up' | 'down' | 'ring' | 'dust';
+
+interface MoveSignature {
+  /** How the glyphs travel. */
+  path?: TravelPath;
+  /** Amount of travelling glyphs. */
+  count?: number;
+  /** Amount of particles released by the impact. */
+  motes?: number;
+  /** Size of the travelling glyph. */
+  size?: number;
+  /** Travel duration. */
+  travel?: number;
+  /** Height of the travel arc. */
+  arc?: number;
+  /** Spin speed of the travelling glyph. */
+  spin?: number;
+  /** Length of the glyph trail. */
+  trail?: number;
+  /** Continuous stream of glyphs along the path (0 = off). */
+  stream?: number;
+  /** Vortex of glyphs spinning around the target (0 = off). */
+  vortex?: number;
+  /** Expanding rings leaving the target (0 = off). */
+  rings?: number;
+  /** Orbiting glyphs around the caster / target (0 = off). */
+  orbit?: number;
+  /** Shape of the impact burst. */
+  impact?: ImpactShape;
+  /** Number of slash arcs. */
+  slashes?: number;
+  /** Angle between the slash arcs (radians). */
+  slashAngle?: number;
+  /** Lunge distance of the attacker. */
+  lunge?: number;
+  /** Afterimage left behind at the origin (dash moves). */
+  afterimage?: boolean;
+  /** Scale the glyph up while travelling. */
+  grow?: number;
+}
+
+const MOVE_SIGNATURE: Record<string, MoveSignature> = {
+  // --- Fire ---------------------------------------------------------------
+  ember: { stream: 7, size: 0.42, travel: 0.5, spin: 5, impact: 'up', motes: 7 },
+  flame_claw: { slashes: 2, slashAngle: 0.5, lunge: 1.7, impact: 'up', motes: 6 },
+  inferno_surge: { size: 1.15, travel: 0.62, trail: 6, rings: 1, impact: 'up', spin: 3, motes: 9, grow: 1.5 },
+
+  // --- Water --------------------------------------------------------------
+  hydro_jet: { stream: 9, size: 0.34, travel: 0.34, spin: 2, impact: 'wide', motes: 7 },
+  bubble_veil: { orbit: 7, impact: 'ring' },
+  aqua_fang: { slashes: 2, slashAngle: 1.9, lunge: 1.5, impact: 'wide', motes: 6 },
+  tidal_maelstrom: { vortex: 12, rings: 2, motes: 10, impact: 'wide' },
+
+  // --- Nature -------------------------------------------------------------
+  leaf_shuriken: { path: 'spiral', count: 5, size: 0.45, travel: 0.45, spin: 12, trail: 2, impact: 'burst', motes: 5 },
+  photosynthesis: { orbit: 8, impact: 'ring' },
+  thorn_whip: { stream: 8, size: 0.4, travel: 0.42, spin: 3, impact: 'burst', motes: 5 },
+  verdant_wrath: { vortex: 11, rings: 1, motes: 9, impact: 'burst' },
+
+  // --- Electric -----------------------------------------------------------
+  volt_spark: { stream: 6, size: 0.4, travel: 0.36, spin: 16, impact: 'burst', motes: 6 },
+  static_field: { orbit: 9, impact: 'burst' },
+  thunder_strike: { size: 0.9, travel: 0.4, rings: 1, impact: 'burst', spin: 12, motes: 9 },
+  overcharge: { slashes: 1, slashAngle: 0.9, lunge: 2.1, impact: 'burst', motes: 8 },
+
+  // --- Earth --------------------------------------------------------------
+  pebble_barrage: { path: 'arc', count: 5, size: 0.42, travel: 0.5, spin: 5, impact: 'down', motes: 6 },
+  stone_fortress: { orbit: 6, impact: 'ring' },
+  earth_tremor: { size: 0.8, travel: 0.36, rings: 1, impact: 'down', motes: 8 },
+  avalanche: { size: 1.1, travel: 0.4, rings: 2, impact: 'down', spin: 2, motes: 10 },
+
+  // --- Shadow -------------------------------------------------------------
+  shadow_sneak: { path: 'dash', afterimage: true, lunge: 2.2, slashes: 1, slashAngle: 1.2, impact: 'burst', motes: 7 },
+  night_terror: { size: 0.8, travel: 0.55, spin: 2, rings: 1, impact: 'burst', motes: 7 },
+  eclipse_strike: { slashes: 2, slashAngle: 1.57, lunge: 1.6, rings: 1, impact: 'ring', motes: 8 },
+
+  // --- Light --------------------------------------------------------------
+  astral_beam: { size: 0.5, travel: 0.42, rings: 1, impact: 'burst', spin: 6, motes: 6 },
+  soul_purge: { rings: 3, motes: 7, impact: 'ring' },
+  divine_radiance: { size: 1, travel: 0.42, rings: 2, impact: 'burst', spin: 4, motes: 12, grow: 1.4 },
+
+  // --- Frost --------------------------------------------------------------
+  frost_nibble: { slashes: 2, slashAngle: 0.7, lunge: 1.5, impact: 'burst', motes: 6 },
+  icicle_lance: { size: 0.5, travel: 0.36, spin: 4, impact: 'burst', motes: 5 },
+  absolute_zero: { vortex: 10, rings: 2, motes: 9, impact: 'burst' },
+
+  // --- Poison -------------------------------------------------------------
+  acid_spit: { path: 'arc', size: 0.55, travel: 0.55, spin: 3, impact: 'burst', motes: 7 },
+  toxic_needle: { size: 0.3, travel: 0.28, spin: 2, impact: 'burst', motes: 4 },
+  venomous_cross: { slashes: 2, slashAngle: 1.57, lunge: 1.5, impact: 'burst', motes: 6 },
+
+  // --- Wind ---------------------------------------------------------------
+  gust: { stream: 7, size: 0.44, travel: 0.4, spin: 7, impact: 'burst', motes: 6 },
+  sky_slash: { slashes: 1, slashAngle: 1.3, lunge: 1.8, impact: 'burst', motes: 6 },
+  hurricane_drill: { path: 'spiral', count: 4, size: 0.6, travel: 0.5, spin: 18, vortex: 6, impact: 'burst', motes: 8 },
+};
+
+function signatureOf(move: Move): MoveSignature {
+  return MOVE_SIGNATURE[move.id] ?? {};
+}
+
+// ---------------------------------------------------------------------------
 // Shared resources
 // ---------------------------------------------------------------------------
 
@@ -521,6 +632,10 @@ interface MoteOptions {
   speed?: number;
   opacity?: number;
   lifetime?: number;
+  /** Overrides of the element profile. */
+  spread?: number;
+  lift?: number;
+  gravity?: number;
 }
 
 class ElementalMotes {
@@ -536,6 +651,9 @@ class ElementalMotes {
   private age = 0;
   private lifetime: number;
   private maxOpacity: number;
+  private spreadMul: number;
+  private liftMul: number;
+  private gravityMul: number;
 
   constructor(
     res: VfxResources,
@@ -552,6 +670,9 @@ class ElementalMotes {
     const speed = opts.speed ?? 1;
     const opacity = opts.opacity ?? 0.9;
     const lifetime = opts.lifetime ?? 1;
+    this.spreadMul = opts.spread ?? 1;
+    this.liftMul = opts.lift ?? 1;
+    this.gravityMul = opts.gravity ?? 1;
 
     for (let i = 0; i < count; i++) {
       const mat = new THREE.SpriteMaterial({
@@ -607,9 +728,11 @@ class ElementalMotes {
         case 'burst': {
           const d = this.speed[i] * this.age * 2.4;
           sprite.position.set(
-            Math.cos(a) * d * profile.spread,
-            this.height[i] + profile.lift * this.age * 1.6 - profile.gravity * this.age * this.age * 2.2,
-            Math.sin(a) * d * profile.spread
+            Math.cos(a) * d * profile.spread * this.spreadMul,
+            this.height[i] +
+              profile.lift * this.liftMul * this.age * 1.6 -
+              profile.gravity * this.gravityMul * this.age * this.age * 2.2,
+            Math.sin(a) * d * profile.spread * this.spreadMul
           );
           break;
         }
@@ -757,6 +880,8 @@ interface ProjectileOptions {
   trail: number;
   arc: number;
   travel: number;
+  path?: TravelPath;
+  grow?: number;
 }
 
 class ProjectileEffect extends VfxEffect {
@@ -767,6 +892,9 @@ class ProjectileEffect extends VfxEffect {
   private trailSprites: THREE.Sprite[] = [];
   private trailAges: number[] = [];
   private profile: ElementProfile;
+  private path: TravelPath;
+  private grow: number;
+  private baseSize: number;
 
   constructor(
     res: VfxResources,
@@ -838,6 +966,9 @@ class ProjectileEffect extends VfxEffect {
       this.trailAges.push(99);
     }
     this.profile = profile;
+    this.path = opts.path ?? 'straight';
+    this.grow = opts.grow ?? 1;
+    this.baseSize = opts.size;
   }
 
   protected tick(delta: number): void {
@@ -845,7 +976,23 @@ class ProjectileEffect extends VfxEffect {
     const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
     this.body.position.lerpVectors(this.from, this.to, eased);
-    this.body.position.y += Math.sin(t * Math.PI) * this.opts.arc;
+
+    // Path shape.
+    if (this.path === 'straight') {
+      this.body.position.y += Math.sin(t * Math.PI) * this.opts.arc;
+    } else if (this.path === 'arc') {
+      // Lobbed shot: rises then falls onto the target.
+      this.body.position.y += Math.sin(t * Math.PI) * this.opts.arc * 1.6;
+    } else if (this.path === 'spiral') {
+      // Helix around the straight line.
+      const r = Math.sin(t * Math.PI) * 1.15;
+      const a = t * Math.PI * 4;
+      this.body.position.x += Math.cos(a) * r;
+      this.body.position.z += Math.sin(a) * r;
+      this.body.position.y += Math.sin(t * Math.PI) * this.opts.arc;
+    } else if (this.path === 'dash') {
+      this.body.position.y += Math.sin(t * Math.PI) * this.opts.arc * 0.4;
+    }
 
     // Elemental wobble (water drops, shadow wisps, poison bubbles...).
     const wobble = this.profile.wobble * Math.sin(t * 18);
@@ -855,6 +1002,13 @@ class ProjectileEffect extends VfxEffect {
     this.core.material.rotation += this.opts.spin * delta;
     this.shard.rotation.x += this.opts.spin * 0.9 * delta;
     this.shard.rotation.y += this.opts.spin * 0.7 * delta;
+
+    // Some moves swell while they travel (Inferno Surge, Absolute Zero...).
+    if (this.grow !== 1) {
+      const scale = this.baseSize * (1 + (this.grow - 1) * t);
+      this.core.scale.set(scale * 2.1, scale * 2.1, 1);
+      this.aura.scale.set(scale * 3.1, scale * 3.1, 1);
+    }
 
     const flicker = 1 - this.profile.flicker * 0.5 * (1 + Math.sin(this.age * 22)) * 0.5;
     this.core.material.opacity = 0.95 * flicker;
@@ -1077,13 +1231,225 @@ class ColumnEffect extends VfxEffect {
 }
 
 // ---------------------------------------------------------------------------
+// Adapter that turns a group of elemental particles into a regular effect
+// ---------------------------------------------------------------------------
+
+class MotesEffect extends VfxEffect {
+  private motes: ElementalMotes;
+
+  constructor(
+    res: VfxResources,
+    type: ElementalType,
+    layout: MoteLayout,
+    count: number,
+    opts: MoteOptions,
+    origin: THREE.Vector3
+  ) {
+    super(opts.lifetime ?? 1, res);
+    this.motes = new ElementalMotes(res, type, layout, count, opts);
+    this.motes.root.position.copy(origin);
+    this.root.add(this.motes.root);
+  }
+
+  protected tick(delta: number): void {
+    this.motes.update(delta);
+  }
+
+  dispose(): void {
+    this.motes.dispose();
+    super.dispose();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stream: a continuous jet of element glyphs (Ember Breath, Hydro Jet, ...)
+// ---------------------------------------------------------------------------
+
+class StreamEffect extends VfxEffect {
+  private sprites: THREE.Sprite[] = [];
+  private path: THREE.Vector3[] = [];
+  private control = new THREE.Vector3();
+
+  constructor(
+    res: VfxResources,
+    private from: THREE.Vector3,
+    private to: THREE.Vector3,
+    private type: ElementalType,
+    count: number,
+    private size: number,
+    private spin: number,
+    duration: number,
+    arc: number
+  ) {
+    super(duration, res);
+    const pal = paletteOf(type);
+
+    // Quadratic path bulging upwards.
+    this.control.copy(from).lerp(to, 0.5);
+    this.control.y += arc;
+
+    for (let i = 0; i < count; i++) {
+      const t = count === 1 ? 0 : i / (count - 1);
+      const mat = new THREE.SpriteMaterial({
+        map: res.glyphs[type],
+        color: i % 2 === 0 ? pal.core : pal.edge,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+      });
+      const sprite = new THREE.Sprite(mat);
+      const scale = this.size * (1.05 - t * 0.45);
+      sprite.scale.set(scale, scale, 1);
+      this.root.add(sprite);
+      this.sprites.push(sprite);
+
+      const p = new THREE.Vector3();
+      const u = 1 - t;
+      p.set(
+        u * u * from.x + 2 * u * t * this.control.x + t * t * to.x,
+        u * u * from.y + 2 * u * t * this.control.y + t * t * to.y,
+        u * u * from.z + 2 * u * t * this.control.z + t * t * to.z
+      );
+      sprite.position.copy(p);
+      this.path.push(p);
+    }
+  }
+
+  protected tick(delta: number): void {
+    const t = Math.min(1, this.age / this.duration);
+    const profile = ELEMENT_PROFILE[this.type];
+    // The head advances along the path, the tail fades behind it.
+    const head = t * (this.sprites.length + 1);
+
+    for (let i = 0; i < this.sprites.length; i++) {
+      const sprite = this.sprites[i];
+      const distance = head - i;
+      if (distance < 0) {
+        sprite.material.opacity = 0;
+        continue;
+      }
+      const fade = Math.max(0, 1 - distance / (this.sprites.length * 0.9));
+      const flick = 1 - profile.flicker * 0.5 * (1 + Math.sin(this.age * 20 + i)) * 0.5;
+      sprite.material.opacity = fade * 0.95 * Math.max(0.25, flick);
+      sprite.material.rotation += this.spin * delta;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Vortex: glyphs spiralling around a point (Tidal Maelstrom, Verdant Wrath)
+// ---------------------------------------------------------------------------
+
+class VortexEffect extends VfxEffect {
+  private sprites: THREE.Sprite[] = [];
+  private angles: number[] = [];
+  private heights: number[] = [];
+
+  constructor(res: VfxResources, private center: THREE.Vector3, private type: ElementalType, count: number, size: number) {
+    super(0.85, res);
+    const pal = paletteOf(type);
+
+    for (let i = 0; i < count; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: res.glyphs[type],
+        color: i % 2 === 0 ? pal.core : pal.edge,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.setScalar(size * (0.7 + Math.random() * 0.6));
+      this.root.add(sprite);
+      this.sprites.push(sprite);
+      this.angles.push((i / count) * Math.PI * 2);
+      this.heights.push((i / count) * 2.4);
+    }
+  }
+
+  protected tick(delta: number): void {
+    const t = Math.min(1, this.age / this.duration);
+    const profile = ELEMENT_PROFILE[this.type];
+    const spin = 4 + profile.spin;
+    const radius = 2.2 * (1 - t * 0.75);
+
+    for (let i = 0; i < this.sprites.length; i++) {
+      const sprite = this.sprites[i];
+      const a = this.angles[i] + this.age * spin;
+      const h = this.heights[i] * (1 - t * 0.85);
+      sprite.position.set(
+        this.center.x + Math.cos(a) * radius,
+        this.center.y - CHEST_RISE + 0.4 + h,
+        this.center.z + Math.sin(a) * radius
+      );
+      sprite.material.rotation += delta * profile.spin * 0.8;
+      sprite.material.opacity = Math.sin(Math.min(1, t * 1.2) * Math.PI) * 0.95;
+      const s = sprite.scale.x * (0.995 + 0.01 * Math.sin(this.age * 10 + i));
+      sprite.scale.set(s, s, 1);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ring wave: rings leaving the target (Soul Purge, Absolute Zero, ...)
+// ---------------------------------------------------------------------------
+
+class RingWaveEffect extends VfxEffect {
+  private rings: THREE.Mesh[] = [];
+
+  constructor(res: VfxResources, private center: THREE.Vector3, private type: ElementalType, count: number) {
+    super(0.9, res);
+    const pal = paletteOf(type);
+
+    for (let i = 0; i < count; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: res.ringTex,
+        color: i % 2 === 0 ? pal.core : pal.edge,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      const ring = new THREE.Mesh(res.geoPlane, mat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.copy(center).setY(center.y - CHEST_RISE + 0.05);
+      this.root.add(ring);
+      this.rings.push(ring);
+    }
+  }
+
+  protected tick(): void {
+    const t = Math.min(1, this.age / this.duration);
+    for (let i = 0; i < this.rings.length; i++) {
+      const ring = this.rings[i];
+      const local = Math.max(0, Math.min(1, t * 1.4 - i * 0.18));
+      const scale = 0.6 + local * 6.5;
+      ring.scale.set(scale, scale, 1);
+      (ring.material as THREE.MeshBasicMaterial).opacity = Math.sin(local * Math.PI) * 0.8;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Melee slash (physical attacks)
 // ---------------------------------------------------------------------------
 
 class SlashEffect extends VfxEffect {
   private arcs: THREE.Sprite[] = [];
 
-  constructor(res: VfxResources, private target: THREE.Vector3, private type: ElementalType, arcCount: number, private reach: number) {
+  constructor(
+    res: VfxResources,
+    private target: THREE.Vector3,
+    private type: ElementalType,
+    arcCount: number,
+    private reach: number,
+    private angle: number
+  ) {
     super(0.34, res);
     const pal = paletteOf(type);
 
@@ -1099,9 +1465,10 @@ class SlashEffect extends VfxEffect {
       });
       const arc = new THREE.Sprite(arcMat);
       arc.position.copy(target);
-      arc.position.x += (i % 2 === 0 ? -1 : 1) * 0.35 * (reach / 3);
-      arc.position.z += (i % 2 === 0 ? 0.25 : -0.25) * (reach / 3);
-      arc.material.rotation = (i * Math.PI) / 2 + 0.4;
+      const offset = (i - (arcCount - 1) / 2) * 0.4 * (reach / 3);
+      arc.position.x += offset;
+      arc.position.z += offset * 0.6;
+      arc.material.rotation = this.angle * i + 0.4;
       this.root.add(arc);
       this.arcs.push(arc);
     }
@@ -1419,6 +1786,7 @@ class ImpactEffect extends VfxEffect {
       push: THREE.Vector3;
       power: number;
       count: number;
+      shape: ImpactShape;
     }
   ) {
     super(opts.crit ? 0.66 : 0.5, res);
@@ -1465,7 +1833,8 @@ class ImpactEffect extends VfxEffect {
       this.root.add(this.star);
     }
 
-    // The element itself bursts out of the target.
+    // The element itself bursts out of the target, shaped by the move.
+    const shape = this.opts.shape;
     this.burst = new ElementalMotes(res, type, 'burst', opts.count, {
       radius: 0.55,
       height: 0,
@@ -1473,6 +1842,9 @@ class ImpactEffect extends VfxEffect {
       speed: 1,
       opacity: 1,
       lifetime: opts.crit ? 0.66 : 0.5,
+      spread: shape === 'wide' ? 1.7 : shape === 'up' ? 0.7 : 1,
+      lift: shape === 'up' ? 2.1 : shape === 'wide' ? 0.4 : 1,
+      gravity: shape === 'down' ? 2.4 : shape === 'up' ? 0.4 : 1,
     });
     this.burst.root.position.copy(target);
     this.root.add(this.burst.root);
@@ -1832,6 +2204,7 @@ export class BattleVfxDirector implements BattleVfxSink {
   public playAttack(command: AttackVfxCommand): void {
     const move = command.move;
     const kind = classifyMove(move);
+    const sig = signatureOf(move);
 
     const attackerFeet = this.anchorOf(command.attacker);
     const defenderFeet = this.anchorOf(command.defender);
@@ -1852,8 +2225,9 @@ export class BattleVfxDirector implements BattleVfxSink {
     // heavier, a resisted one looks weaker. It never contradicts the combat.
     const effectiveness =
       command.typeMultiplier >= 2 ? 1.4 : command.typeMultiplier > 0 && command.typeMultiplier < 1 ? 0.72 : 1;
-    const trail = this.lowQuality ? 2 : 5;
-    const moteCount = this.lowQuality ? 5 : 11;
+    const trail = this.lowQuality ? 2 : sig.trail ?? 5;
+    const moteCount = this.lowQuality ? 5 : sig.motes ?? 11;
+    const impactShape: ImpactShape = sig.impact ?? 'burst';
 
     // --- Anticipation ----------------------------------------------------
     let impactDelay = 0;
@@ -1868,41 +2242,77 @@ export class BattleVfxDirector implements BattleVfxSink {
         ? 'buff'
         : 'status';
       const target = auraTarget === command.attacker ? attackerChest : defenderChest;
-      this.addEffect(new AuraEffect(this.res, target, move.type, mode, moteCount), 0.05);
+      this.addEffect(
+        new AuraEffect(this.res, target, move.type, mode, this.lowQuality ? 5 : sig.orbit ?? sig.count ?? 11),
+        0.05
+      );
       impactDelay = 0.45;
     } else {
       this.addEffect(new ChargeEffect(this.res, attackerChest, attackerFeet, move.type, moteCount), 0);
 
+      // A dash leaves an afterimage of the caster behind.
+      if (sig.afterimage) {
+        this.addEffect(
+          new MotesEffect(this.res, move.type, 'burst', this.lowQuality ? 4 : 7, {
+            radius: 0.6,
+            height: 0,
+            size: 0.7,
+            speed: 0.6,
+            opacity: 0.85,
+            lifetime: 0.5,
+          }, attackerChest),
+          0.05
+        );
+      }
+
       switch (kind) {
         case 'projectile': {
-          const travel = heavy ? 0.5 : 0.42;
-          this.addEffect(
-            new ProjectileEffect(this.res, attackerChest, defenderChest, move.type, {
-              size: heavy ? 0.85 : 0.6,
-              spin: heavy ? 4 : 7,
-              trail,
-              arc: heavy ? 1.1 : 0.6,
-              travel,
-            }),
-            0.32
-          );
+          const travel = sig.travel ?? (heavy ? 0.5 : 0.42);
+          const size = sig.size ?? (heavy ? 0.85 : 0.6);
+
+          if (sig.stream) {
+            // Continuous jet of glyphs (Ember Breath, Hydro Jet, Zephyr Gust).
+            this.addEffect(
+              new StreamEffect(
+                this.res, attackerChest, defenderChest, move.type,
+                this.lowQuality ? Math.max(3, Math.round(sig.stream * 0.6)) : sig.stream,
+                size, sig.spin ?? 6, travel, sig.arc ?? 0.8
+              ),
+              0.32
+            );
+          } else {
+            this.addEffect(
+              new ProjectileEffect(this.res, attackerChest, defenderChest, move.type, {
+                size,
+                spin: sig.spin ?? (heavy ? 4 : 7),
+                trail,
+                arc: sig.arc ?? (heavy ? 1.1 : 0.6),
+                travel,
+                path: sig.path,
+                grow: sig.grow,
+              }),
+              0.32
+            );
+          }
           impactDelay = 0.32 + travel;
           break;
         }
         case 'multi': {
-          const count = this.lowQuality ? 3 : 5;
-          const travel = 0.4;
+          const count = this.lowQuality ? 3 : sig.count ?? 5;
+          const travel = sig.travel ?? 0.4;
           for (let i = 0; i < count; i++) {
             const spread = (i - (count - 1) / 2) * 0.55;
             const from = attackerChest.clone().add(new THREE.Vector3(0, spread * 0.35, spread * 0.25));
             const to = defenderChest.clone().add(new THREE.Vector3(0, spread * 0.4, spread * 0.3));
             this.addEffect(
               new ProjectileEffect(this.res, from, to, move.type, {
-                size: 0.4,
-                spin: 9,
-                trail: this.lowQuality ? 1 : 3,
-                arc: 0.35,
+                size: sig.size ?? 0.4,
+                spin: sig.spin ?? 9,
+                trail: this.lowQuality ? 1 : sig.trail ?? 3,
+                arc: sig.arc ?? 0.35,
                 travel,
+                path: sig.path,
+                grow: sig.grow,
               }),
               0.3 + i * 0.07
             );
@@ -1911,7 +2321,10 @@ export class BattleVfxDirector implements BattleVfxSink {
           break;
         }
         case 'beam': {
-          this.addEffect(new BeamEffect(this.res, attackerChest, defenderChest, move.type, heavy ? 0.42 : 0.3), 0.3);
+          this.addEffect(
+            new BeamEffect(this.res, attackerChest, defenderChest, move.type, heavy ? 0.42 : 0.3),
+            0.3
+          );
           impactDelay = 0.52;
           break;
         }
@@ -1925,12 +2338,16 @@ export class BattleVfxDirector implements BattleVfxSink {
         }
         case 'slash': {
           this.addEffect(
-            new LungeEffect(this.res, attackerChannel, pushDir, heavy ? 1.5 : 1.15, 0.62),
+            new LungeEffect(this.res, attackerChannel, pushDir, sig.lunge ?? (heavy ? 1.5 : 1.15), 0.62),
             0
           );
-          const arcCount = move.id === 'venomous_cross' ? 2 : 1;
           this.addEffect(
-            new SlashEffect(this.res, defenderChest, move.type, arcCount, heavy ? 3.6 : 2.8),
+            new SlashEffect(
+              this.res, defenderChest, move.type,
+              sig.slashes ?? 1,
+              heavy ? 3.6 : 2.8,
+              sig.slashAngle ?? 0.9
+            ),
             0.3
           );
           impactDelay = 0.33;
@@ -1938,7 +2355,7 @@ export class BattleVfxDirector implements BattleVfxSink {
         }
         case 'slam': {
           this.addEffect(
-            new LungeEffect(this.res, attackerChannel, pushDir, 0.9, 0.6),
+            new LungeEffect(this.res, attackerChannel, pushDir, sig.lunge ?? 0.9, 0.6),
             0
           );
           this.addEffect(new SlamEffect(this.res, defenderFeet, move.type, moteCount), 0.32);
@@ -1950,23 +2367,25 @@ export class BattleVfxDirector implements BattleVfxSink {
           impactDelay = 0.36;
           break;
         }
-          case 'aura':
-          default: {
-            // Status moves are handled above; a non status move with an unknown
-            // shape still travels as a projectile.
-            this.addEffect(
-              new ProjectileEffect(this.res, attackerChest, defenderChest, move.type, {
-                size: 0.6,
-                spin: 5,
-                trail,
-                arc: 0.8,
-                travel: 0.45,
-              }),
-              0.32
-            );
-            impactDelay = 0.77;
-            break;
-          }
+        case 'aura':
+        default: {
+          // Status moves are handled above; a non status move with an unknown
+          // shape still travels as a projectile.
+          this.addEffect(
+            new ProjectileEffect(this.res, attackerChest, defenderChest, move.type, {
+              size: sig.size ?? 0.6,
+              spin: sig.spin ?? 5,
+              trail,
+              arc: sig.arc ?? 0.8,
+              travel: sig.travel ?? 0.45,
+              path: sig.path,
+              grow: sig.grow,
+            }),
+            0.32
+          );
+          impactDelay = 0.77;
+          break;
+        }
       }
     }
 
@@ -1998,9 +2417,37 @@ export class BattleVfxDirector implements BattleVfxSink {
           push: pushDir,
           power: effectiveness,
           count: moteCount,
+          shape: impactShape,
         }),
         0
       );
+
+      // Extra flourishes defined by the move itself.
+      if (sig.vortex) {
+        this.addEffect(
+          new VortexEffect(this.res, defenderChest, move.type, this.lowQuality ? 5 : sig.vortex, 0.7),
+          0
+        );
+      }
+      if (sig.rings) {
+        this.addEffect(
+          new RingWaveEffect(this.res, defenderChest, move.type, this.lowQuality ? 1 : sig.rings),
+          0.05
+        );
+      }
+      if (sig.orbit && !isStatusMove) {
+        this.addEffect(
+          new MotesEffect(this.res, move.type, 'orbit', this.lowQuality ? 4 : sig.orbit, {
+            radius: 1.4,
+            height: 0,
+            size: 0.6,
+            speed: 1,
+            opacity: 0.9,
+            lifetime: 0.9,
+          }, defenderChest),
+          0.05
+        );
+      }
 
       if (command.statusApplied) {
         this.addEffect(new StatusEffect(this.res, defenderChest, command.statusApplied, moteCount), 0.08);
