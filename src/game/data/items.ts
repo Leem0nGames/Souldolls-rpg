@@ -1,0 +1,67 @@
+import { Item } from '../../types/game';
+
+export const ITEMS_DATABASE: Record<string, Item> = {
+  animus_vial: {
+    id: 'animus_vial',
+    name: 'Vial de Ánima',
+    category: 'vial',
+    description: 'Un frasco etéreo diseñado para capturar almas errantes de SoulDolls salvajes.',
+    count: 10,
+    price: 100,
+    catchMultiplier: 1.0,
+  },
+  great_vial: {
+    id: 'great_vial',
+    name: 'Vial Refinado',
+    category: 'vial',
+    description: 'Vial de mayor pureza de resonancia. Aumenta la tasa de captura en un 50%.',
+    count: 5,
+    price: 300,
+    catchMultiplier: 1.5,
+  },
+  celestial_vial: {
+    id: 'celestial_vial',
+    name: 'Vial Celestial',
+    category: 'vial',
+    description: 'Frasco divino que nunca falla en capturar a cualquier SoulDoll salvaje.',
+    count: 1,
+    price: 2500,
+    catchMultiplier: 255.0,
+  },
+  soul_salve: {
+    id: 'soul_salve',
+    name: 'Bálsamo de Alma',
+    category: 'medicine',
+    description: 'Restaura 30 puntos de salud (HP) a un SoulDoll herido.',
+    count: 5,
+    price: 120,
+    healHpAmount: 30,
+  },
+  super_salve: {
+    id: 'super_salve',
+    name: 'Super Bálsamo',
+    category: 'medicine',
+    description: 'Restaura 70 puntos de salud (HP) a un SoulDoll.',
+    count: 3,
+    price: 350,
+    healHpAmount: 70,
+  },
+  revive_catalyst: {
+    id: 'revive_catalyst',
+    name: 'Catalizador de Resurrección',
+    category: 'medicine',
+    description: 'Revive a un SoulDoll debilitado devolviéndole la mitad de su salud máxima.',
+    count: 2,
+    price: 800,
+    reviveRatio: 0.5,
+  },
+  evolution_prism: {
+    id: 'evolution_prism',
+    name: 'Prisma de Ascensión',
+    category: 'evolution',
+    description: 'Prisma radiante que fuerza la metamorfosis y evolución de un SoulDoll compatible inmediatamente.',
+    count: 1,
+    price: 2000,
+    evolutionTargetItem: true,
+  }
+};

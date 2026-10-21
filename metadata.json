@@ -1,0 +1,6 @@
+{
+  "name": "SoulDolls - RPG Luminati 2.5D",
+  "description": "RPG de coleccionismo y combate de almas con motor 2.5D pixel-art, arquitectura ECS, batallas por turnos y evolución dinámica.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
