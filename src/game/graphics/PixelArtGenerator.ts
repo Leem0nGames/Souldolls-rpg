@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SOULDOLL_SPECIES } from '../data/souldolls';
+import { GENERIC_SHEETS, SOULDOLL_SHEETS } from '../data/souldollSheets';
 import {
   BackgroundKey,
   PLAYER_BACKGROUND,
@@ -96,9 +97,9 @@ class PixelArtGenerator {
 
     // El resto comparte las hojas genericas, elegidas de forma estable.
     const generic: number[] = [];
-    for (const [key, index] of this.sheetIndex) {
-      if (!key.startsWith('generic-')) continue;
-      generic.push(index);
+    for (const sheet of GENERIC_SHEETS) {
+      const index = this.sheetIndex.get(sheet.file);
+      if (index !== undefined) generic.push(index);
     }
     if (generic.length === 0) return 0;
 
@@ -146,16 +147,12 @@ class PixelArtGenerator {
   private initSoulDollSpritesheet() {
     if (typeof window === 'undefined') return;
 
-    // Cada especie con arte propio tiene su hoja; el resto comparte las
-    // genericas (elegidas de forma estable a partir del id).
-    const bases = [
-      { key: 'tomo-1', file: '105515179_1792644033044389', species: 'ignisaur' },
-      { key: 'tomo-2', file: '408770211_1792644218641596', species: 'pyrodrake' },
-      { key: 'tomo-3', file: '642182396_1792644280769170', species: 'tomomusashi' },
-      { key: 'generic-1', file: '493519213_1792589298660327' },
-      { key: 'generic-2', file: '647390299_1792589248743036' },
-      { key: 'generic-3', file: '837023740_1792589339474861' },
-    ];
+    // Las hojas y su reparto vienen del manifiesto (tools/soul-harness.ts).
+    const bases = SOULDOLL_SHEETS.map((sheet) => ({
+      key: sheet.file,
+      file: sheet.file,
+      species: sheet.species,
+    }));
 
     let loadedCount = 0;
     const validSheets: Array<{
@@ -185,7 +182,10 @@ class PixelArtGenerator {
     };
 
     bases.forEach((base, idx) => {
-      if (base.species) this.speciesSheet.set(base.species, base.key);
+      // La primera hoja del manifiesto para una especie es la que manda.
+      if (base.species && !this.speciesSheet.has(base.species)) {
+        this.speciesSheet.set(base.species, base.key);
+      }
       this.loadFirstAvailable(
         [`/assets/souldolls/${base.file}.webp`, `/assets/souldolls/${base.file}.jpg`],
         (img) => {

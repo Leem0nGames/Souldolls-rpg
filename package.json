@@ -10,7 +10,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "bake:sprites": "tsx tools/bake-sprites.ts",
-    "bake:props": "tsx tools/bake-props.ts"
+    "bake:props": "tsx tools/bake-props.ts",
+    "soul:harness": "tsx tools/soul-harness.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
