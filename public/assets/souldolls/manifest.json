@@ -1,30 +1,36 @@
 {
   "sheets": [
     {
-      "file": "green_cromakey_background_20261022114114",
+      "file": "ignisaur/ignisaur_1.webp",
       "species": "ignisaur",
+      "tier": 1,
+      "name": "Tomo",
       "note": "Tomo - tier 1 (cromakey verde)"
     },
     {
-      "file": "green_cromakey_background_20261022114146",
+      "file": "pyrodrake/pyrodrake_2.webp",
       "species": "pyrodrake",
+      "tier": 2,
+      "name": "Tomoe",
       "note": "Tomoe - tier 2 (cromakey verde)"
     },
     {
-      "file": "green_cromakey_background_20261022114207",
+      "file": "tomomusashi/tomomusashi_3.webp",
       "species": "tomomusashi",
+      "tier": 3,
+      "name": "Tomoe Musashi",
       "note": "Tomoe Musashi - tier 3 (cromakey verde)"
     },
     {
-      "file": "493519213_1792589298660327",
+      "file": "generic/generic_1.webp",
       "note": "generica"
     },
     {
-      "file": "647390299_1792589248743036",
+      "file": "generic/generic_2.webp",
       "note": "generica"
     },
     {
-      "file": "837023740_1792589339474861",
+      "file": "generic/generic_3.webp",
       "note": "generica"
     }
   ]

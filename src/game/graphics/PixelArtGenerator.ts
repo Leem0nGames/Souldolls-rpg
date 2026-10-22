@@ -187,7 +187,10 @@ class PixelArtGenerator {
         this.speciesSheet.set(base.species, base.key);
       }
       this.loadFirstAvailable(
-        [`/assets/souldolls/${base.file}.webp`, `/assets/souldolls/${base.file}.jpg`],
+        [
+          `/assets/souldolls/${base.file}`,
+          `/assets/souldolls/${base.file.replace(/\.webp$/i, '.jpg')}`,
+        ],
         (img) => {
           const w = img.width;
           const h = img.height;

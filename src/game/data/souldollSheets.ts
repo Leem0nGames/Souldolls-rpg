@@ -5,21 +5,25 @@
  * their own sheet share the generic ones, chosen with a stable hash.
  */
 export interface SoulDollSheet {
-  /** File base name inside /assets/souldolls. */
+  /** Path inside /assets/souldolls, with the extension. */
   file: string;
   /** Species that owns this sheet. */
   species?: string;
+  /** Evolution stage of the species. */
+  tier?: number;
+  /** Display name of the species. */
+  name?: string;
   /** Free note. */
   note?: string;
 }
 
 export const SOULDOLL_SHEETS: SoulDollSheet[] = [
-  { file: 'green_cromakey_background_20261022114114', species: 'ignisaur', note: 'Tomo - tier 1 (cromakey verde)' },
-  { file: 'green_cromakey_background_20261022114146', species: 'pyrodrake', note: 'Tomoe - tier 2 (cromakey verde)' },
-  { file: 'green_cromakey_background_20261022114207', species: 'tomomusashi', note: 'Tomoe Musashi - tier 3 (cromakey verde)' },
-  { file: '493519213_1792589298660327', note: 'generica' },
-  { file: '647390299_1792589248743036', note: 'generica' },
-  { file: '837023740_1792589339474861', note: 'generica' },
+  { file: 'ignisaur/ignisaur_1.webp', species: 'ignisaur', tier: 1, name: 'Tomo', note: 'Tomo - tier 1 (cromakey verde)' },
+  { file: 'pyrodrake/pyrodrake_2.webp', species: 'pyrodrake', tier: 2, name: 'Tomoe', note: 'Tomoe - tier 2 (cromakey verde)' },
+  { file: 'tomomusashi/tomomusashi_3.webp', species: 'tomomusashi', tier: 3, name: 'Tomoe Musashi', note: 'Tomoe Musashi - tier 3 (cromakey verde)' },
+  { file: 'generic/generic_1.webp', note: 'generica' },
+  { file: 'generic/generic_2.webp', note: 'generica' },
+  { file: 'generic/generic_3.webp', note: 'generica' },
 ];
 
 /** Sheets shared by the species that do not have artwork of their own. */

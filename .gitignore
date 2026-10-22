@@ -7,3 +7,6 @@ coverage/
 .env*
 !.env.example
 .harness/
+
+# Los JPG originales no entran en el repo: solo los WebP con alfa
+public/assets/souldolls/**/*.jpg

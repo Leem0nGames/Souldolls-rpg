@@ -23,25 +23,35 @@ npm run soul:harness   # analiza + hornea + informa del estado de las hojas
 
 ## 1. Sprite sheets (the dynamic folder)
 
-The character artwork lives in a **dynamic folder**: new JPGs can be dropped in
-at any moment.
+The character artwork lives in a **dynamic folder**: new sheets can be dropped in
+at any moment. The folder is organised **one directory per species**.
 
 ```
 public/assets/souldolls/
-  manifest.json          <- SOURCE OF TRUTH: which sheet belongs to which species
-  <id>.jpg               <- the original artwork (never modified)
-  <id>.webp              <- baked by the harness: same sheet, alpha mask, ~40% smaller
+  manifest.json                    <- SOURCE OF TRUTH: which sheet belongs to which species
+  <speciesId>/
+    <speciesId>_<tier>.webp        <- the baked sheet (alpha mask, ~40% smaller)
+  generic/
+    generic_1.webp                 <- sheets shared by the species without artwork
 ```
+
+- The **original JPGs are not committed** (they are gitignored). The repo only
+  holds the baked WebP, which is what the game loads.
+- The canonical name is `<speciesId>_<tier>.webp` inside the folder of its
+  species. The agent picks the assignment, the user can rename it afterwards.
+- The **tier** comes from the species data (`stage`), so the file name always
+  matches the evolution stage.
 
 ### The flow, step by step
 
 1. **Drop** a JPG in `public/assets/souldolls/` (1024x1024, two views: back on
-   the left half, front on the right half).
+   the left half, front on the right half). It can be a green screen sheet or
+   a sheet with a flat dark backdrop.
 2. **Run** `npm run soul:harness`. It
-   - registers any new JPG in the manifest (unassigned),
+   - walks the folder and registers any new file in the manifest (unassigned),
    - analyses every sheet (size, detected backdrop colour, one or two views,
      whether it already has an alpha mask),
-   - bakes the missing WebP,
+   - bakes the missing WebP (green screen or flat backdrop),
    - regenerates `src/game/data/souldollSheets.ts`,
    - writes a preview of every sheet in `.harness/preview/`,
    - prints a report with the assigned sheets, the new ones, the species that
@@ -52,8 +62,9 @@ public/assets/souldolls/
    ```bash
    npm run soul:harness -- --assign green_cromakey_background_20261022114114 ignisaur
    ```
-   This updates `manifest.json`, re-bakes and regenerates the mapping. The
-   first sheet of the manifest for a species is the one that wins.
+   This bakes it if needed, **moves it to `<speciesId>/<speciesId>_<tier>.webp`**,
+   updates `manifest.json` and regenerates the mapping. The first sheet of the
+   manifest for a species is the one that wins.
 5. **Add the species data** in `src/game/data/souldolls.ts` (name, types, stats,
    learnset, evolution, colorTheme). The harness prints a template.
 6. **Verify**: `npm run lint && npm run build`, then check the game.
@@ -96,11 +107,13 @@ the id).
 
 Current line of fire:
 
-| Tier | Species id | Name | Types | Sheet (cromakey verde) |
+| Tier | Species id | Name | Types | Sheet |
 |---|---|---|---|---|
-| 1 | `ignisaur` | Tomo | Fire | `green_cromakey_background_20261022114114` |
-| 2 | `pyrodrake` | Tomoe | Fire / Shadow | `green_cromakey_background_20261022114146` |
-| 3 | `tomomusashi` | Tomoe Musashi | Fire / Light | `green_cromakey_background_20261022114207` |
+| 1 | `ignisaur` | Tomo | Fire | `ignisaur/ignisaur_1.webp` |
+| 2 | `pyrodrake` | Tomoe | Fire / Shadow | `pyrodrake/pyrodrake_2.webp` |
+| 3 | `tomomusashi` | Tomoe Musashi | Fire / Light | `tomomusashi/tomomusashi_3.webp` |
+
+The other 18 species (9 lines) still share `generic/generic_1..3.webp`.
 
 ---
 

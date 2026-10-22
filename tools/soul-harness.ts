@@ -1,28 +1,30 @@
 /**
  * SoulDoll spritesheet harness
  * ---------------------------------------------------------------------------
- * The artwork folder is dynamic: JPGs can be dropped in at any time. This
- * harness is the single entry point that keeps everything consistent.
+ * The artwork folder is dynamic: new sheets can be dropped in at any time.
+ * This harness is the single entry point that keeps everything consistent.
  *
  *   npm run soul:harness
- *     1. analyses every sheet (size, backdrop colour, two view layout)
- *     2. bakes the WebP with the alpha mask when it is missing or outdated
- *     3. regenerates src/game/data/souldollSheets.ts from the manifest
- *     4. reports what is new, what is unassigned and what data is missing
+ *     1. walks the folder and finds every sheet (jpg or webp)
+ *     2. bakes the jpg into a webp with an alpha mask (when needed)
+ *     3. renames the sheets to the <speciesId>_<tier>.webp pattern, one
+ *        folder per species, and updates the manifest
+ *     4. regenerates src/game/data/souldollSheets.ts from the manifest
+ *     5. reports what is new, what is unassigned and what data is missing
  *
- *   npm run soul:harness -- --assign <fileBase> <speciesId>
- *     Registers a sheet for a species (and redoes the steps above).
+ *   npm run soul:harness -- --assign <file> <speciesId>
+ *     Moves a sheet to its species folder with the canonical name and
+ *     registers it in the manifest.
  *
  * The manifest (public/assets/souldolls/manifest.json) is the source of truth
  * of the artwork mapping; the species data lives in src/game/data/souldolls.ts.
  */
 import sharp from 'sharp';
-import { readdir, readFile, writeFile, mkdir, stat } from 'fs/promises';
+import { readdir, readFile, writeFile, mkdir, stat, rename, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
-import { resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import {
   SOULDOLL_BACKGROUND,
-  PLAYER_BACKGROUND,
   GREEN_SCREEN,
   detectBackgroundColor,
   hasTransparentBackground,
@@ -30,6 +32,7 @@ import {
   removeChromaKey,
   rgbToHex,
 } from '../src/game/graphics/BackgroundKey';
+import { SOULDOLL_SPECIES } from '../src/game/data/souldolls';
 
 const DIR = 'public/assets/souldolls';
 const MANIFEST = `${DIR}/manifest.json`;
@@ -37,10 +40,14 @@ const PREVIEW_DIR = '.harness/preview';
 const GENERATED = 'src/game/data/souldollSheets.ts';
 
 interface SheetEntry {
-  /** File base name (without extension). */
+  /** Path inside /assets/souldolls, with the extension. */
   file: string;
   /** Species that owns this sheet. */
   species?: string;
+  /** Evolution stage of the species. */
+  tier?: number;
+  /** Display name of the species. */
+  name?: string;
   /** Free note for the agent. */
   note?: string;
 }
@@ -64,6 +71,27 @@ async function writeManifest(manifest: Manifest): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Filesystem
+// ---------------------------------------------------------------------------
+
+/** Every file of the folder, relative to it. */
+async function walk(dir: string, prefix = ''): Promise<string[]> {
+  const out: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) out.push(...(await walk(join(dir, entry.name), rel)));
+    else out.push(rel);
+  }
+  return out;
+}
+
+/** Canonical name of a sheet: <speciesId>_<tier>.webp inside its folder. */
+function canonicalPath(speciesId: string, tier: number): string {
+  return `${speciesId}/${speciesId}_${tier}.webp`;
+}
+
+// ---------------------------------------------------------------------------
 // Analysis
 // ---------------------------------------------------------------------------
 
@@ -71,45 +99,12 @@ interface SheetInfo {
   file: string;
   width: number;
   height: number;
-  /** The measured backdrop colour. */
   background: string;
-  /** True when the sheet shows two views (back on the left, front on the right). */
   twoViews: boolean;
-  /** True when the source already carries an alpha mask. */
   hasMask: boolean;
-  /** True when the backdrop is a green screen. */
   chroma: boolean;
-  /** Size of the webp, 0 when it is not baked. */
   webpBytes: number;
   jpgBytes: number;
-}
-
-async function analyse(file: string): Promise<SheetInfo | null> {
-  const jpg = `${DIR}/${file}.jpg`;
-  if (!existsSync(jpg)) return null;
-
-  const { data, info } = await sharp(jpg).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
-  const background = detectBackgroundColor(rgba, info.width, info.height);
-  const masked = hasTransparentBackground(rgba, info.width, info.height);
-  const chroma = isGreenScreen(rgba, info.width, info.height);
-
-  let webpBytes = 0;
-  if (existsSync(`${DIR}/${file}.webp`)) {
-    webpBytes = (await stat(`${DIR}/${file}.webp`)).size;
-  }
-
-  return {
-    file,
-    width: info.width,
-    height: info.height,
-    background: rgbToHex(background),
-    twoViews: info.width >= info.height,
-    hasMask: masked,
-    chroma,
-    webpBytes,
-    jpgBytes: (await stat(jpg)).size,
-  };
 }
 
 /** True when the border of the sheet is a green screen. */
@@ -140,23 +135,43 @@ function isGreenScreen(
   return total > 0 && green / total > 0.5;
 }
 
+/** Analyses a sheet given its path relative to the spritesheet folder. */
+async function analyse(relative: string): Promise<SheetInfo | null> {
+  const path = `${DIR}/${relative}`;
+  if (!existsSync(path)) return null;
+  const { data, info } = await sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
+  const background = detectBackgroundColor(rgba, info.width, info.height);
+  const masked = hasTransparentBackground(rgba, info.width, info.height);
+  const chroma = isGreenScreen(rgba, info.width, info.height);
+
+  return {
+    file: relative,
+    width: info.width,
+    height: info.height,
+    background: rgbToHex(background),
+    twoViews: info.width >= info.height,
+    hasMask: masked,
+    chroma,
+    webpBytes: 0,
+    jpgBytes: 0,
+  };
+}
+
 /** Writes a preview of the sheet so the agent can look at it. */
 async function writePreview(info: SheetInfo): Promise<void> {
   await mkdir(PREVIEW_DIR, { recursive: true });
-  const source = existsSync(`${DIR}/${info.file}.webp`)
-    ? `${DIR}/${info.file}.webp`
-    : `${DIR}/${info.file}.jpg`;
-  const image = await sharp(source).resize({ width: 512, fit: 'inside' }).png().toBuffer();
-  await writeFile(resolve(PREVIEW_DIR, `${info.file}.png`), image);
+  const name = info.file.replace(/[\\/]/g, '_').replace(/\.[^.]+$/, '');
+  const image = await sharp(`${DIR}/${info.file}`).resize({ width: 512, fit: 'inside' }).png().toBuffer();
+  await writeFile(resolve(PREVIEW_DIR, `${name}.png`), image);
 }
 
 // ---------------------------------------------------------------------------
 // Baking
 // ---------------------------------------------------------------------------
 
-async function bakeSheet(file: string): Promise<{ background: string; bytes: number }> {
-  const jpg = `${DIR}/${file}.jpg`;
-  const { data, info } = await sharp(jpg).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+async function bakeSheet(source: string, target: string): Promise<{ background: string; bytes: number }> {
+  const { data, info } = await sharp(source).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
   const detected = detectBackgroundColor(rgba, info.width, info.height);
 
@@ -172,13 +187,14 @@ async function bakeSheet(file: string): Promise<{ background: string; bytes: num
     }
   }
 
+  await mkdir(dirname(target), { recursive: true });
   await sharp(Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength), {
     raw: { width: info.width, height: info.height, channels: 4 },
   })
     .webp({ quality: 90, alphaQuality: 100, effort: 6 })
-    .toFile(`${DIR}/${file}.webp`);
+    .toFile(target);
 
-  return { background: rgbToHex(detected), bytes: (await stat(`${DIR}/${file}.webp`)).size };
+  return { background: rgbToHex(detected), bytes: (await stat(target)).size };
 }
 
 // ---------------------------------------------------------------------------
@@ -187,9 +203,12 @@ async function bakeSheet(file: string): Promise<{ background: string; bytes: num
 
 async function generateMapping(manifest: Manifest): Promise<void> {
   const lines = manifest.sheets.map((sheet) => {
-    const species = sheet.species ? `, species: '${sheet.species}'` : '';
-    const note = sheet.note ? `, note: '${sheet.note.replace(/'/g, "\\'")}'` : '';
-    return `  { file: '${sheet.file}'${species}${note} },`;
+    const parts = [`file: '${sheet.file}'`];
+    if (sheet.species) parts.push(`species: '${sheet.species}'`);
+    if (sheet.tier !== undefined) parts.push(`tier: ${sheet.tier}`);
+    if (sheet.name) parts.push(`name: '${sheet.name.replace(/'/g, "\\'")}'`);
+    if (sheet.note) parts.push(`note: '${sheet.note.replace(/'/g, "\\'")}'`);
+    return `  { ${parts.join(', ')} },`;
   });
 
   const content = `/**
@@ -199,10 +218,14 @@ async function generateMapping(manifest: Manifest): Promise<void> {
  * their own sheet share the generic ones, chosen with a stable hash.
  */
 export interface SoulDollSheet {
-  /** File base name inside /assets/souldolls. */
+  /** Path inside /assets/souldolls, with the extension. */
   file: string;
   /** Species that owns this sheet. */
   species?: string;
+  /** Evolution stage of the species. */
+  tier?: number;
+  /** Display name of the species. */
+  name?: string;
   /** Free note. */
   note?: string;
 }
@@ -243,7 +266,7 @@ function templateFor(speciesId: string): string {
 async function report(manifest: Manifest, infos: SheetInfo[]): Promise<void> {
   const speciesSource = await readFile('src/game/data/souldolls.ts', 'utf8');
 
-  console.log('\n=== Hojas de personajes ===');
+  console.log('\n=== Hojas ===');
   for (const info of infos) {
     const entry = manifest.sheets.find(s => s.file === info.file);
     const owner = entry ? (entry.species ?? 'generica') : 'NUEVA (sin registrar)';
@@ -251,16 +274,13 @@ async function report(manifest: Manifest, infos: SheetInfo[]): Promise<void> {
     const mask = info.chroma ? 'cromakey verde' : info.hasMask ? 'con alfa' : 'pintada';
     console.log(
       `  ${info.file}\n` +
-        `    ${info.width}x${info.height} · ${views} · fondo ${info.background} · ${mask}\n` +
-        `    ${(info.jpgBytes / 1024).toFixed(0)} KB jpg -> ${(info.webpBytes / 1024).toFixed(0)} KB webp · especie: ${owner}`
+        `    ${info.width}x${info.height} · ${views} · fondo ${info.background} · ${mask} · ${owner}`
     );
   }
 
-  // Una hoja "sin asignar" es la que esta en disco pero no en el manifiesto.
   const onDisk = infos.map(i => i.file);
   const unassigned = infos.filter(info => !manifest.sheets.some(s => s.file === info.file));
   const missing = manifest.sheets.filter(s => !onDisk.includes(s.file));
-  const generic = manifest.sheets.filter(s => !s.species);
 
   if (unassigned.length > 0) {
     console.log('\n=== Hojas nuevas sin asignar ===');
@@ -268,7 +288,7 @@ async function report(manifest: Manifest, infos: SheetInfo[]): Promise<void> {
       console.log(`  ${info.file}`);
       console.log(
         `    Asignar:  npm run soul:harness -- --assign ${info.file} <speciesId>\n` +
-          `    Previsualizacion: ${PREVIEW_DIR}/${info.file}.png`
+          `    Previsualizacion: ${PREVIEW_DIR}/`
       );
     }
   }
@@ -278,13 +298,13 @@ async function report(manifest: Manifest, infos: SheetInfo[]): Promise<void> {
     for (const sheet of missing) console.log(`  ${sheet.file}`);
   }
 
-  // Una especie no deberia tener dos hojas: la primera del manifiesto gana.
-  const seenSpecies = new Set<string>();
+  // One species must not have two sheets: the first one of the manifest wins.
+  const seen = new Set<string>();
   const duplicated: string[] = [];
   for (const sheet of manifest.sheets) {
     if (!sheet.species) continue;
-    if (seenSpecies.has(sheet.species)) duplicated.push(sheet.species);
-    else seenSpecies.add(sheet.species);
+    if (seen.has(sheet.species)) duplicated.push(sheet.species);
+    else seen.add(sheet.species);
   }
   if (duplicated.length > 0) {
     console.log('\n=== AVISO: especies con mas de una hoja ===');
@@ -295,6 +315,7 @@ async function report(manifest: Manifest, infos: SheetInfo[]): Promise<void> {
   }
 
   const assigned = manifest.sheets.filter(s => s.species).map(s => s.species!);
+  const withData = assigned.filter(id => speciesSource.includes(`${id}: {`));
   const withoutData = assigned.filter(id => !speciesSource.includes(`${id}: {`));
   if (withoutData.length > 0) {
     console.log('\n=== Especies con hoja pero sin datos en souldolls.ts ===');
@@ -303,11 +324,66 @@ async function report(manifest: Manifest, infos: SheetInfo[]): Promise<void> {
     }
   }
 
-  const withData = assigned.filter(id => speciesSource.includes(`${id}: {`));
   console.log('\n=== Estado ===');
-  console.log(`  especies con hoja: ${assigned.length} (${withData.join(', ') || 'ninguna'})`);
-  console.log(`  hojas genericas: ${generic.length} (${generic.map(g => g.file).join(', ') || 'ninguna'})`);
-  console.log(`  total horneado: ${infos.reduce((sum, i) => sum + i.webpBytes, 0) / 1024 | 0} KB de webp`);
+  console.log(`  especies con hoja propia: ${assigned.length} (${withData.join(', ') || 'ninguna'})`);
+  console.log(`  hojas genericas: ${manifest.sheets.filter(s => !s.species).length}`);
+  console.log(
+    `  especies todavia genericas: ${
+      Object.keys(SOULDOLL_SPECIES).filter(id => !assigned.includes(id)).length
+    } de ${Object.keys(SOULDOLL_SPECIES).length}`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Assign
+// ---------------------------------------------------------------------------
+
+async function assign(manifest: Manifest, file: string, speciesId: string): Promise<void> {
+  const species = SOULDOLL_SPECIES[speciesId];
+  if (!species) {
+    console.error(`La especie ${speciesId} no existe en souldolls.ts.`);
+    process.exit(1);
+  }
+
+  const tier = species.stage;
+  const target = canonicalPath(speciesId, tier);
+  const source = file.includes('.') ? file : `${file}.webp`;
+  const sourcePath = source.startsWith(DIR) ? source : `${DIR}/${source}`;
+
+  if (!existsSync(sourcePath)) {
+    console.error(`No encuentro la hoja ${sourcePath}`);
+    process.exit(1);
+  }
+
+  // Bake the jpg if the sheet is still the original.
+  let baked = sourcePath;
+  if (/\.jpe?g$/i.test(sourcePath)) {
+    const tmp = sourcePath.replace(/\.jpe?g$/i, '.webp');
+    const result = await bakeSheet(sourcePath, tmp);
+    console.log(`Horneada ${sourcePath} (fondo ${result.background}, ${(result.bytes / 1024).toFixed(0)} KB)`);
+    baked = tmp;
+  }
+
+  // Move it to the canonical path of the species.
+  const targetPath = `${DIR}/${target}`;
+  await mkdir(dirname(targetPath), { recursive: true });
+  if (baked !== targetPath) {
+    if (existsSync(targetPath)) await unlink(targetPath);
+    await rename(baked, targetPath);
+  }
+
+  const entry = manifest.sheets.find(s => s.file === source || s.file === baked);
+  if (entry) {
+    entry.file = target;
+    entry.species = speciesId;
+    entry.tier = tier;
+    entry.name = species.name;
+  } else {
+    manifest.sheets.push({ file: target, species: speciesId, tier, name: species.name });
+  }
+
+  await writeManifest(manifest);
+  console.log(`Hoja asignada: ${target}  (${species.name}, tier ${tier})`);
 }
 
 // ---------------------------------------------------------------------------
@@ -317,33 +393,26 @@ async function report(manifest: Manifest, infos: SheetInfo[]): Promise<void> {
 (async () => {
   const args = process.argv.slice(2);
   const assignIndex = args.indexOf('--assign');
+  const manifest = await readManifest();
+
   if (assignIndex >= 0) {
     const file = args[assignIndex + 1];
     const species = args[assignIndex + 2];
     if (!file || !species) {
-      console.error('Uso: npm run soul:harness -- --assign <fileBase> <speciesId>');
+      console.error('Uso: npm run soul:harness -- --assign <hoja> <speciesId>');
       process.exit(1);
     }
-    const manifest = await readManifest();
-    const entry = manifest.sheets.find(s => s.file === file);
-    if (!entry) {
-      manifest.sheets.push({ file, species });
-    } else {
-      entry.species = species;
-    }
-    await writeManifest(manifest);
-    console.log(`Asignada la hoja ${file} a la especie ${species}.`);
+    await assign(manifest, file, species);
   }
 
-  const manifest = await readManifest();
+  // Any new file in the folder is registered automatically (unassigned).
+  const files = await walk(DIR);
+  const jpgs = files.filter(f => /\.jpe?g$/i.test(f));
+  const webps = files.filter(f => /\.webp$/i.test(f));
 
-  // Any new JPG in the folder is registered automatically (unassigned) so the
-  // dynamic folder never needs manual bookkeeping.
-  const onDisk = (await readdir(DIR))
-    .filter(f => /\.jpe?g$/i.test(f))
-    .map(f => f.replace(/\.jpe?g$/i, ''));
   let dirty = false;
-  for (const file of onDisk) {
+  for (const file of [...jpgs, ...webps]) {
+    if (file === 'manifest.json') continue;
     if (manifest.sheets.some(s => s.file === file)) continue;
     manifest.sheets.push({ file });
     dirty = true;
@@ -351,22 +420,26 @@ async function report(manifest: Manifest, infos: SheetInfo[]): Promise<void> {
   }
   if (dirty) await writeManifest(manifest);
 
-  // Bake the sheets that are missing or older than their source.
+  // Bake the jpg that has no webp yet.
+  for (const jpg of jpgs) {
+    const target = jpg.replace(/\.jpe?g$/i, '.webp');
+    if (existsSync(`${DIR}/${target}`)) continue;
+    const result = await bakeSheet(`${DIR}/${jpg}`, `${DIR}/${target}`);
+    console.log(`Horneada ${jpg} (fondo ${result.background}, ${(result.bytes / 1024).toFixed(0)} KB)`);
+  }
+
+  // Analyse every sheet.
   const infos: SheetInfo[] = [];
-  for (const entry of manifest.sheets) {
-    const jpg = `${DIR}/${entry.file}.jpg`;
-    if (!existsSync(jpg)) continue;
-    const webp = `${DIR}/${entry.file}.webp`;
-    const needsBake = !existsSync(webp) || (await stat(webp)).mtimeMs < (await stat(jpg)).mtimeMs;
-    if (needsBake) {
-      const result = await bakeSheet(entry.file);
-      console.log(`Horneada ${entry.file} (fondo ${result.background}, ${(result.bytes / 1024).toFixed(0)} KB)`);
-    }
-    const info = await analyse(entry.file);
-    if (info) {
-      infos.push(info);
-      await writePreview(info);
-    }
+  for (const sheet of manifest.sheets) {
+    const path = `${DIR}/${sheet.file}`;
+    if (!existsSync(path)) continue;
+    const info = await analyse(sheet.file);
+    if (!info) continue;
+    info.webpBytes = (await stat(path)).size;
+    const jpg = path.replace(/\.webp$/i, '.jpg');
+    info.jpgBytes = existsSync(jpg) ? (await stat(jpg)).size : 0;
+    infos.push(info);
+    await writePreview(info);
   }
 
   await generateMapping(manifest);
