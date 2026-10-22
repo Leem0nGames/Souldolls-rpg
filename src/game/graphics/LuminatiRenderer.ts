@@ -7,6 +7,7 @@ import { sound } from '../audio/SoundEffects';
 import { BattleVfxDirector } from './BattleVfxDirector';
 import { battleVfx } from './BattleVfx';
 import { buildOverworldMap, isBlocked } from './OverworldTiles';
+import { OverworldProps } from './OverworldProps';
 
 export class LuminatiRenderer {
   private container: HTMLElement;
@@ -42,6 +43,7 @@ export class LuminatiRenderer {
 
   // Overworld
   private groundMaterial!: THREE.MeshLambertMaterial;
+  private overworldProps!: OverworldProps;
 
   // Camera settings
   private targetCameraPos = new THREE.Vector3(0, 8, 11);
@@ -131,6 +133,7 @@ export class LuminatiRenderer {
     this.buildSanctuaryShrine();
     this.buildBattleArena();
     this.initEcsEntities();
+    this.buildOverworldProps();
     this.loadOverworldMap();
 
     // Battle visual effects (driven by this renderer's own tick)
@@ -159,6 +162,16 @@ export class LuminatiRenderer {
     terrain.rotation.x = -Math.PI / 2;
     terrain.receiveShadow = true;
     this.worldGroup.add(terrain);
+  }
+
+  /**
+   * Spawns the billboards of the map (trees, bushes, flowers, rocks and
+   * signposts). They are sprites, so the player walks behind them.
+   */
+  private buildOverworldProps() {
+    this.overworldProps = new OverworldProps(`${import.meta.env?.BASE_URL ?? '/'}assets/props`);
+    this.overworldProps.load();
+    this.worldGroup.add(this.overworldProps.group);
   }
 
   /**

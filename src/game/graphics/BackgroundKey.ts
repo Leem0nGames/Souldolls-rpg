@@ -148,6 +148,69 @@ export function hasTransparentBackground(
 }
 
 /**
+ * Removes a set of flat colours (the grass, the path...) by flooding them
+ * from the borders. Pixels of the same colour that are enclosed by the
+ * character (the light green highlights of the foliage) are kept.
+ */
+export function removeColorSet(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  colors: RgbColor[],
+  tolerance = 12
+): void {
+  const total = width * height;
+  const removed = new Uint8Array(total);
+  const visited = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  const tolSq = tolerance * tolerance;
+
+  const matches = (idx: number): boolean => {
+    const pi = idx * 4;
+    const r = data[pi];
+    const g = data[pi + 1];
+    const b = data[pi + 2];
+    for (let c = 0; c < colors.length; c++) {
+      const dr = r - colors[c].r;
+      const dg = g - colors[c].g;
+      const db = b - colors[c].b;
+      if (dr * dr + dg * dg + db * db <= tolSq) return true;
+    }
+    return false;
+  };
+
+  let head = 0;
+  let tail = 0;
+  for (let x = 0; x < width; x++) {
+    queue[tail++] = x;
+    queue[tail++] = (height - 1) * width + x;
+  }
+  for (let y = 0; y < height; y++) {
+    queue[tail++] = y * width;
+    queue[tail++] = y * width + width - 1;
+  }
+
+  while (head < tail) {
+    const idx = queue[head++];
+    if (visited[idx]) continue;
+    visited[idx] = 1;
+    if (!matches(idx)) continue;
+
+    removed[idx] = 1;
+    const x = idx % width;
+    const y = (idx / width) | 0;
+    if (x > 0) queue[tail++] = idx - 1;
+    if (x < width - 1) queue[tail++] = idx + 1;
+    if (y > 0) queue[tail++] = idx - width;
+    if (y < height - 1) queue[tail++] = idx + width;
+  }
+
+  for (let idx = 0; idx < total; idx++) {
+    if (removed[idx]) data[idx * 4 + 3] = 0;
+  }
+}
+
+/**
  * Removes the backdrop from an RGBA buffer (in place).
  * The alpha channel is written: 0 for the backdrop, 255 for the character.
  */

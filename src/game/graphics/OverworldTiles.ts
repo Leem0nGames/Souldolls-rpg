@@ -56,7 +56,15 @@ const CLEAR_POINTS = [
   { x: 0, z: 2.5, r: 2.2 },
 ];
 
-type DecorationKind = 'tree-short' | 'tree-tall' | 'flower-a' | 'flower-b' | 'sign';
+export type DecorationKind =
+  | 'tree-short'
+  | 'tree-tall'
+  | 'bush'
+  | 'flower-a'
+  | 'flower-b'
+  | 'rock'
+  | 'grass-tuft'
+  | 'sign';
 
 interface Decoration {
   kind: DecorationKind;
@@ -68,22 +76,8 @@ interface Decoration {
 /** Tiles occupied by a tree, the player cannot walk through them. */
 const BLOCKED = new Set<string>();
 
-const DECOR_FILES: Record<DecorationKind, string> = {
-  'tree-short': 'construct-Tree-short.png',
-  'tree-tall': 'construct-Tree-talle.png',
-  'flower-a': 'Flower-johto-00.png',
-  'flower-b': 'Flower-johto-01.png',
-  sign: 'Sign-metal-00.png',
-};
-
-/** Size in tiles of every decoration. */
-const DECOR_SIZE: Record<DecorationKind, [number, number]> = {
-  'tree-short': [2, 2],
-  'tree-tall': [2, 4],
-  'flower-a': [1, 1],
-  'flower-b': [1, 1],
-  sign: [1, 1],
-};
+/** Decoration kinds that stop the player. */
+const SOLID_DECORATIONS: DecorationKind[] = ['tree-short', 'tree-tall'];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -178,6 +172,23 @@ function maskedTile(
 const GRID = buildTileGrid();
 const DECORATIONS = buildDecorations(GRID);
 
+/** A decoration placed in the world, ready to become a billboard. */
+export interface PlacedDecoration {
+  kind: DecorationKind;
+  /** World position of the prop (its base). */
+  x: number;
+  z: number;
+}
+
+/** Every decoration of the map, in world coordinates. */
+export function getDecorations(): PlacedDecoration[] {
+  return DECORATIONS.map((decor) => ({
+    kind: decor.kind,
+    x: tileCenter(decor.col),
+    z: tileCenter(decor.row),
+  }));
+}
+
 /** True when a world position is inside a tree. */
 export function isBlocked(worldX: number, worldZ: number): boolean {
   const col = Math.floor(worldX / TILE_UNITS + MAP_TILES / 2);
@@ -201,11 +212,17 @@ function buildDecorations(grid: TileKind[][]): Decoration[] {
   const taken = new Set<string>();
   const key = (col: number, row: number) => `${col},${row}`;
 
-  const isFree = (col: number, row: number, width: number, height: number) => {
+  const isFree = (
+    col: number,
+    row: number,
+    width: number,
+    height: number,
+    onKind: TileKind = 'grass'
+  ) => {
     for (let c = col; c < col + width; c++) {
       for (let r = row; r < row + height; r++) {
         if (c < 0 || r < 0 || c >= MAP_TILES || r >= MAP_TILES) return false;
-        if (grid[r][c] !== 'grass') return false;
+        if (grid[r][c] !== onKind) return false;
         if (taken.has(key(c, r))) return false;
       }
     }
@@ -218,15 +235,15 @@ function buildDecorations(grid: TileKind[][]): Decoration[] {
     return true;
   };
 
-  const place = (kind: DecorationKind, width: number, height: number) => {
+  const place = (kind: DecorationKind, width: number, height: number, onKind: TileKind = 'grass') => {
     for (let attempt = 0; attempt < 400; attempt++) {
       const col = BORDER_TILES + Math.floor(random() * (MAP_TILES - BORDER_TILES * 2 - width));
       const row = BORDER_TILES + Math.floor(random() * (MAP_TILES - BORDER_TILES * 2 - height));
-      if (!isFree(col, row, width, height)) continue;
+      if (!isFree(col, row, width, height, onKind)) continue;
       for (let c = col; c < col + width; c++) {
         for (let r = row; r < row + height; r++) taken.add(key(c, r));
       }
-      if (kind === 'tree-short' || kind === 'tree-tall') {
+      if (SOLID_DECORATIONS.includes(kind)) {
         for (let c = col; c < col + width; c++) {
           for (let r = row; r < row + height; r++) BLOCKED.add(key(c, r));
         }
@@ -238,9 +255,14 @@ function buildDecorations(grid: TileKind[][]): Decoration[] {
   };
 
   // A forest belt on the north side and around the edges.
-  for (let i = 0; i < 22; i++) place('tree-tall', 2, 4);
-  for (let i = 0; i < 28; i++) place('tree-short', 2, 2);
-  for (let i = 0; i < 30; i++) place(random() < 0.5 ? 'flower-a' : 'flower-b', 1, 1);
+  for (let i = 0; i < 20; i++) place('tree-tall', 2, 4);
+  for (let i = 0; i < 24; i++) place('tree-short', 2, 2);
+  // Bushes and rocks fill the gaps between the trees.
+  for (let i = 0; i < 18; i++) place('bush', 1, 1);
+  for (let i = 0; i < 10; i++) place('rock', 1, 1);
+  for (let i = 0; i < 26; i++) place(random() < 0.5 ? 'flower-a' : 'flower-b', 1, 1);
+  // Tufts of grass inside the spirit grass patches.
+  for (let i = 0; i < 26; i++) place('grass-tuft', 1, 1, 'tallgrass');
 
   // Signposts next to the crossroads.
   const signSpots: [number, number][] = [
@@ -276,19 +298,11 @@ export interface OverworldMap {
  */
 export async function buildOverworldMap(): Promise<OverworldMap> {
   const grid = GRID;
-  const decorations = DECORATIONS;
 
   const tileImages: Partial<Record<TileKind, HTMLImageElement>> = {};
   await Promise.all(
     (Object.keys(TILE_FILES) as TileKind[]).map(async (kind) => {
       tileImages[kind] = await loadImage(`${TILE_BASE}/${TILE_FILES[kind]}`);
-    })
-  );
-
-  const decorImages: Partial<Record<DecorationKind, HTMLImageElement>> = {};
-  await Promise.all(
-    (Object.keys(DECOR_FILES) as DecorationKind[]).map(async (kind) => {
-      decorImages[kind] = await loadImage(`${TILE_BASE}/${DECOR_FILES[kind]}`);
     })
   );
 
@@ -350,24 +364,6 @@ export async function buildOverworldMap(): Promise<OverworldMap> {
         ctx.drawImage(masked, col * px, row * px);
       }
     }
-  }
-
-  // 3. Decorations (trees, flowers, signposts).
-  for (const decor of decorations) {
-    const img = decorImages[decor.kind];
-    if (!img) continue;
-    const [w, h] = DECOR_SIZE[decor.kind];
-    ctx.drawImage(
-      img,
-      0,
-      0,
-      w * TILE_PX,
-      h * TILE_PX,
-      decor.col * px,
-      decor.row * px,
-      w * px,
-      h * px
-    );
   }
 
   const texture = new THREE.CanvasTexture(canvas);
