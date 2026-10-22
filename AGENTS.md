@@ -50,7 +50,7 @@ public/assets/souldolls/
    name, its types and its evolution. Look at the preview PNG.
 4. **Assign** it:
    ```bash
-   npm run soul:harness -- --assign 105515179_1792644033044389 ignisaur
+   npm run soul:harness -- --assign green_cromakey_background_20261022114114 ignisaur
    ```
    This updates `manifest.json`, re-bakes and regenerates the mapping. The
    first sheet of the manifest for a species is the one that wins.
@@ -65,13 +65,27 @@ from the border of every sheet and keys it out.
 
 | Sheets | Backdrop | Tolerance |
 |---|---|---|
-| SoulDoll sheets | `#19191E` (rgb 25,25,30) | 26 |
+| SoulDoll sheets (dark) | `#19191E` (rgb 25,25,30) | 26 |
 | Player sheet | `#FFFFFF` | 34 |
+| **Green screen sheets** | detected automatically | chroma key |
 
 A sheet that already ships with an alpha channel is detected and used as is
 (`hasTransparentBackground`). The colour key lives in
 `src/game/graphics/BackgroundKey.ts`; **never** key by luminance: that eats the
 black collar, the boot soles and the straps of the characters.
+
+### Green screen (chroma key) sheets
+
+When the backdrop is a green screen the harness switches to `removeChromaKey`:
+
+- the green is detected by dominance (`g > max(r,b) * 1.45`), so the different
+  exposures of the same green are removed as well,
+- the matte around the character is always taken back with the character's
+  colour (no green spill on the edges),
+- a final **despill** removes the excess of green from the pixels close to the
+  outline.
+
+The green inside the flames is part of the artwork and is left alone.
 
 ### Species and sheet mapping
 
@@ -82,11 +96,11 @@ the id).
 
 Current line of fire:
 
-| Tier | Species id | Name | Sheet |
-|---|---|---|---|
-| 1 | `ignisaur` | Tomo | `105515179_1792644033044389` |
-| 2 | `pyrodrake` | Tomoe | `408770211_1792644218641596` |
-| 3 | `tomomusashi` | Tomoe Musashi | `642182396_1792644280769170` |
+| Tier | Species id | Name | Types | Sheet (cromakey verde) |
+|---|---|---|---|---|
+| 1 | `ignisaur` | Tomo | Fire | `green_cromakey_background_20261022114114` |
+| 2 | `pyrodrake` | Tomoe | Fire / Shadow | `green_cromakey_background_20261022114146` |
+| 3 | `tomomusashi` | Tomoe Musashi | Fire / Light | `green_cromakey_background_20261022114207` |
 
 ---
 

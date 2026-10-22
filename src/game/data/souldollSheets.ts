@@ -14,9 +14,9 @@ export interface SoulDollSheet {
 }
 
 export const SOULDOLL_SHEETS: SoulDollSheet[] = [
-  { file: '105515179_1792644033044389', species: 'ignisaur', note: 'Tomo - tier 1' },
-  { file: '408770211_1792644218641596', species: 'pyrodrake', note: 'Tomoe - tier 2' },
-  { file: '642182396_1792644280769170', species: 'tomomusashi', note: 'Tomoe Musashi - tier 3' },
+  { file: 'green_cromakey_background_20261022114114', species: 'ignisaur', note: 'Tomo - tier 1 (cromakey verde)' },
+  { file: 'green_cromakey_background_20261022114146', species: 'pyrodrake', note: 'Tomoe - tier 2 (cromakey verde)' },
+  { file: 'green_cromakey_background_20261022114207', species: 'tomomusashi', note: 'Tomoe Musashi - tier 3 (cromakey verde)' },
   { file: '493519213_1792589298660327', note: 'generica' },
   { file: '647390299_1792589248743036', note: 'generica' },
   { file: '837023740_1792589339474861', note: 'generica' },

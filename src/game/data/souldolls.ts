@@ -24,9 +24,9 @@ export const SOULDOLL_SPECIES: Record<string, SoulDollSpecies> = {
     id: 'pyrodrake',
     name: 'Tomoe',
     stage: 2,
-    types: ['Fire', 'Wind'],
+    types: ['Fire', 'Shadow'],
     baseStats: { hp: 80, atk: 95, def: 75, spAtk: 105, spDef: 80, spd: 90 },
-    description: 'Forma ascendida de Tomo. Ha despertado alas de fuego astral capaces de evaporar lagos con un solo aleteo.',
+    description: 'Forma ascendida de Tomo. Su chama ha despertado cuernos de sombra y una brasa viva que le susurra al alma.',
     catchRate: 45,
     baseExpReward: 180,
     evolution: { level: 26, evolvesInto: 'tomomusashi' },
@@ -34,10 +34,11 @@ export const SOULDOLL_SPECIES: Record<string, SoulDollSpecies> = {
       { level: 1, moveId: 'ember' },
       { level: 6, moveId: 'flame_claw' },
       { level: 12, moveId: 'inferno_surge' },
-      { level: 18, moveId: 'sky_slash' },
-      { level: 24, moveId: 'hurricane_drill' }
+      { level: 18, moveId: 'shadow_sneak' },
+      { level: 24, moveId: 'night_terror' },
+      { level: 28, moveId: 'eclipse_strike' }
     ],
-    colorTheme: { primary: '#dc2626', secondary: '#ea580c', glow: '#fde047' }
+    colorTheme: { primary: '#dc2626', secondary: '#1e1b4b', glow: '#fde047' }
   },
   tomomusashi: {
     id: 'tomomusashi',
@@ -45,16 +46,16 @@ export const SOULDOLL_SPECIES: Record<string, SoulDollSpecies> = {
     stage: 3,
     types: ['Fire', 'Light'],
     baseStats: { hp: 108, atk: 122, def: 98, spAtk: 138, spDef: 108, spd: 116 },
-    description: 'Forma final de la linea de Tomo. Su hoja astral corta el aire y deja una estela de luz alli donde pasa.',
+    description: 'Forma final de la linea de Tomo. Su armadura de samurai astral y su aura de llama cortan el aire y dejan una estela de luz.',
     catchRate: 32,
     baseExpReward: 320,
     learnset: [
       { level: 1, moveId: 'ember' },
       { level: 6, moveId: 'flame_claw' },
       { level: 12, moveId: 'inferno_surge' },
-      { level: 18, moveId: 'sky_slash' },
+      { level: 18, moveId: 'shadow_sneak' },
       { level: 22, moveId: 'astral_beam' },
-      { level: 26, moveId: 'hurricane_drill' },
+      { level: 26, moveId: 'eclipse_strike' },
       { level: 30, moveId: 'soul_purge' },
       { level: 36, moveId: 'divine_radiance' }
     ],

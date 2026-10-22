@@ -35,6 +35,33 @@ export interface BackgroundKey {
 }
 
 /**
+ * Chroma key (green screen) configuration. The backdrop is detected by how
+ * much the green channel dominates, so the different exposures of the same
+ * green are removed as well.
+ */
+export interface ChromaKey {
+  /** The key colour (the green of the screen). */
+  color: RgbColor;
+  /** How many times bigger the dominant channel must be to count as key. */
+  ratio: number;
+  /** Minimum value of the dominant channel. */
+  minimum: number;
+  /** Tolerance around the key colour for the spill. */
+  tolerance: number;
+  /** Enclosed holes bigger than this (in pixels) are cleared as well. */
+  minHoleArea: number;
+}
+
+/** Classic green screen. */
+export const GREEN_SCREEN: ChromaKey = {
+  color: { r: 0, g: 255, b: 0 },
+  ratio: 1.45,
+  minimum: 90,
+  tolerance: 110,
+  minHoleArea: 400,
+};
+
+/**
  * Backdrop of the SoulDoll sheets (/assets/souldolls/*.jpg).
  * Measured from 9216 border samples: R 18-43, G 19-41, B 25-47.
  */
@@ -210,9 +237,13 @@ export function removeColorSet(
   }
 }
 
+/** Decides whether a pixel belongs to the backdrop. */
+type BackgroundTest = (r: number, g: number, b: number) => boolean;
+
 /**
- * Removes the backdrop from an RGBA buffer (in place).
- * The alpha channel is written: 0 for the backdrop, 255 for the character.
+ * Removes the backdrop from an RGBA buffer (in place), keyed by an exact
+ * colour. The alpha channel is written: 0 for the backdrop, 255 for the
+ * character.
  */
 export function removeBackground(
   data: Uint8ClampedArray,
@@ -220,18 +251,60 @@ export function removeBackground(
   height: number,
   key: BackgroundKey
 ): void {
+  const tolSq = key.tolerance * key.tolerance;
+  removeBackdrop(data, width, height, (r, g, b) => {
+    const dr = r - key.color.r;
+    const dg = g - key.color.g;
+    const db = b - key.color.b;
+    return dr * dr + dg * dg + db * db <= tolSq;
+  }, key.color, key.minHoleArea, false, false);
+}
+
+/**
+ * Removes a chroma key (green screen) from an RGBA buffer (in place).
+ * The matte around the character is always taken back with the character's
+ * colour, which removes the green spill of the edges.
+ */
+export function removeChromaKey(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  key: ChromaKey
+): void {
+  const tolSq = key.tolerance * key.tolerance;
+  removeBackdrop(data, width, height, (r, g, b) => {
+    const dr = r - key.color.r;
+    const dg = g - key.color.g;
+    const db = b - key.color.b;
+    if (dr * dr + dg * dg + db * db <= tolSq) return true;
+    // The green dominates: that is the screen, not the character.
+    const dominant = Math.max(r, b);
+    return g >= key.minimum && g > dominant * key.ratio;
+  }, key.color, key.minHoleArea, true, true);
+}
+
+/**
+ * Core of the keying: flood fill the backdrop from the borders, clear the big
+ * enclosed holes, choke the matte and de-fringe the outline.
+ */
+function removeBackdrop(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  test: BackgroundTest,
+  backdropColor: RgbColor,
+  minHoleArea: number,
+  alwaysChoke: boolean,
+  despill: boolean
+): void {
   const total = width * height;
   const removed = new Uint8Array(total);
   const visited = new Uint8Array(total);
   const queue = new Int32Array(total);
-  const tolSq = key.tolerance * key.tolerance;
 
   const matchesBackground = (idx: number): boolean => {
     const pi = idx * 4;
-    const dr = data[pi] - key.color.r;
-    const dg = data[pi + 1] - key.color.g;
-    const db = data[pi + 2] - key.color.b;
-    return dr * dr + dg * dg + db * db <= tolSq;
+    return test(data[pi], data[pi + 1], data[pi + 2]);
   };
 
   // 1. Flood fill the backdrop starting from the borders.
@@ -293,7 +366,7 @@ export function removeBackground(
         region[hTail++] = idx + width;
       }
     }
-    if (hTail >= key.minHoleArea) {
+    if (hTail >= minHoleArea) {
       for (let i = 0; i < hTail; i++) removed[region[i]] = 1;
     }
   }
@@ -345,9 +418,9 @@ export function removeBackground(
   // 4. Choke: the matte between the character and the backdrop is taken back
   //    with the character's own colour, so the silhouette keeps its width and
   //    the dark fringe disappears.
-  const bgR = key.color.r;
-  const bgG = key.color.g;
-  const bgB = key.color.b;
+  const bgR = backdropColor.r;
+  const bgG = backdropColor.g;
+  const bgB = backdropColor.b;
 
   for (let i = 0; i < matteCount; i++) {
     const mIdx = matte[i];
@@ -422,7 +495,38 @@ export function removeBackground(
     }
   }
 
-  // 5. Write the alpha channel.
+  // 5. Despill: a green screen leaves a green halo on the silhouette. The
+  //    excess of green is removed from the pixels close to the outline.
+  if (despill) {
+    const near = new Uint8Array(edge);
+    for (let pass = 0; pass < 2; pass++) {
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = y * width + x;
+          if (near[idx]) continue;
+          if (
+            (x > 0 && near[idx - 1]) ||
+            (x < width - 1 && near[idx + 1]) ||
+            (y > 0 && near[idx - width]) ||
+            (y < height - 1 && near[idx + width])
+          ) {
+            near[idx] = 1;
+          }
+        }
+      }
+    }
+    for (let idx = 0; idx < total; idx++) {
+      if (!near[idx] || removed[idx]) continue;
+      const pi = idx * 4;
+      const r = data[pi];
+      const g = data[pi + 1];
+      const b = data[pi + 2];
+      const dominant = Math.max(r, b);
+      if (g > dominant + 20) data[pi + 1] = dominant;
+    }
+  }
+
+  // 6. Write the alpha channel.
   for (let idx = 0; idx < total; idx++) {
     data[idx * 4 + 3] = removed[idx] ? 0 : 255;
   }

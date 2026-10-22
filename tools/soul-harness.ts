@@ -23,9 +23,11 @@ import { resolve } from 'path';
 import {
   SOULDOLL_BACKGROUND,
   PLAYER_BACKGROUND,
+  GREEN_SCREEN,
   detectBackgroundColor,
   hasTransparentBackground,
   removeBackground,
+  removeChromaKey,
   rgbToHex,
 } from '../src/game/graphics/BackgroundKey';
 
@@ -75,6 +77,8 @@ interface SheetInfo {
   twoViews: boolean;
   /** True when the source already carries an alpha mask. */
   hasMask: boolean;
+  /** True when the backdrop is a green screen. */
+  chroma: boolean;
   /** Size of the webp, 0 when it is not baked. */
   webpBytes: number;
   jpgBytes: number;
@@ -88,6 +92,7 @@ async function analyse(file: string): Promise<SheetInfo | null> {
   const rgba = new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength);
   const background = detectBackgroundColor(rgba, info.width, info.height);
   const masked = hasTransparentBackground(rgba, info.width, info.height);
+  const chroma = isGreenScreen(rgba, info.width, info.height);
 
   let webpBytes = 0;
   if (existsSync(`${DIR}/${file}.webp`)) {
@@ -101,9 +106,38 @@ async function analyse(file: string): Promise<SheetInfo | null> {
     background: rgbToHex(background),
     twoViews: info.width >= info.height,
     hasMask: masked,
+    chroma,
     webpBytes,
     jpgBytes: (await stat(jpg)).size,
   };
+}
+
+/** True when the border of the sheet is a green screen. */
+function isGreenScreen(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  ring = 4
+): boolean {
+  let green = 0;
+  let total = 0;
+  const check = (x: number, y: number) => {
+    const pi = (y * width + x) * 4;
+    const r = data[pi];
+    const g = data[pi + 1];
+    const b = data[pi + 2];
+    total++;
+    if (g >= GREEN_SCREEN.minimum && g > Math.max(r, b) * GREEN_SCREEN.ratio) green++;
+  };
+  for (let x = 0; x < width; x += ring) {
+    check(x, 0);
+    check(x, height - 1);
+  }
+  for (let y = 0; y < height; y += ring) {
+    check(0, y);
+    check(width - 1, y);
+  }
+  return total > 0 && green / total > 0.5;
 }
 
 /** Writes a preview of the sheet so the agent can look at it. */
@@ -127,11 +161,15 @@ async function bakeSheet(file: string): Promise<{ background: string; bytes: num
   const detected = detectBackgroundColor(rgba, info.width, info.height);
 
   if (!hasTransparentBackground(rgba, info.width, info.height)) {
-    removeBackground(rgba, info.width, info.height, {
-      color: detected,
-      tolerance: SOULDOLL_BACKGROUND.tolerance,
-      minHoleArea: SOULDOLL_BACKGROUND.minHoleArea,
-    });
+    if (isGreenScreen(rgba, info.width, info.height)) {
+      removeChromaKey(rgba, info.width, info.height, GREEN_SCREEN);
+    } else {
+      removeBackground(rgba, info.width, info.height, {
+        color: detected,
+        tolerance: SOULDOLL_BACKGROUND.tolerance,
+        minHoleArea: SOULDOLL_BACKGROUND.minHoleArea,
+      });
+    }
   }
 
   await sharp(Buffer.from(rgba.buffer, rgba.byteOffset, rgba.byteLength), {
@@ -210,7 +248,7 @@ async function report(manifest: Manifest, infos: SheetInfo[]): Promise<void> {
     const entry = manifest.sheets.find(s => s.file === info.file);
     const owner = entry ? (entry.species ?? 'generica') : 'NUEVA (sin registrar)';
     const views = info.twoViews ? '2 vistas' : '1 vista';
-    const mask = info.hasMask ? 'con alfa' : 'pintada';
+    const mask = info.chroma ? 'cromakey verde' : info.hasMask ? 'con alfa' : 'pintada';
     console.log(
       `  ${info.file}\n` +
         `    ${info.width}x${info.height} · ${views} · fondo ${info.background} · ${mask}\n` +
