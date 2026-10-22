@@ -7,7 +7,7 @@
  * Usage:  npx tsx tools/bake-sprites.ts
  */
 import sharp from 'sharp';
-import { stat, mkdir } from 'fs/promises';
+import { stat, mkdir, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
 import {
@@ -18,12 +18,18 @@ import {
   rgbToHex,
 } from '../src/game/graphics/BackgroundKey';
 
-const DOLL_SOURCES = [
-  'public/assets/souldolls/493519213_1792589298660327.jpg',
-  'public/assets/souldolls/647390299_1792589248743036.jpg',
-  'public/assets/souldolls/837023740_1792589339474861.jpg',
-];
+const DOLL_DIR = 'public/assets/souldolls';
 const PLAYER_SOURCE = 'public/assets/831706773_1792592438332202.jpg';
+
+/** Every sheet of the folder is baked, so new artwork is picked up. */
+async function dollSources(): Promise<string[]> {
+  if (!existsSync(DOLL_DIR)) return [];
+  const files = await readdir(DOLL_DIR);
+  return files
+    .filter(f => f.toLowerCase().endsWith('.jpg') || f.toLowerCase().endsWith('.jpeg'))
+    .sort()
+    .map(f => `${DOLL_DIR}/${f}`);
+}
 
 interface BakeReport {
   source: string;
@@ -60,7 +66,7 @@ async function bake(
 (async () => {
   const reports: BakeReport[] = [];
 
-  for (const source of DOLL_SOURCES) {
+  for (const source of await dollSources()) {
     if (!existsSync(source)) {
       console.warn(`Falta ${source}, se omite.`);
       continue;

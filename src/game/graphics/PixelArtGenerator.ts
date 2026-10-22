@@ -39,12 +39,17 @@ class PixelArtGenerator {
 
   private soulDollSpritesheetLoaded = false;
   private loadedSheets: Array<{
+    key: string;
     frontTexture: THREE.CanvasTexture;
     backTexture: THREE.CanvasTexture;
     frontAspect: number;
     backAspect: number;
     avatarUrl: string;
   }> = [];
+  /** Indice de cada hoja cargada, por clave. */
+  private sheetIndex = new Map<string, number>();
+  /** Especie -> clave de la hoja que le pertenece. */
+  private speciesSheet = new Map<string, string>();
   private onSoulDollLoadedListeners: Array<() => void> = [];
 
   constructor() {
@@ -81,11 +86,27 @@ class PixelArtGenerator {
 
   private getSheetIndex(speciesId: string): number {
     if (this.loadedSheets.length === 0) return 0;
+
+    // La hoja propia de la especie (Tomo, Tomoe, Tomoe Musashi) manda.
+    const ownKey = this.speciesSheet.get(speciesId);
+    if (ownKey) {
+      const ownIndex = this.sheetIndex.get(ownKey);
+      if (ownIndex !== undefined) return ownIndex;
+    }
+
+    // El resto comparte las hojas genericas, elegidas de forma estable.
+    const generic: number[] = [];
+    for (const [key, index] of this.sheetIndex) {
+      if (!key.startsWith('generic-')) continue;
+      generic.push(index);
+    }
+    if (generic.length === 0) return 0;
+
     let hash = 0;
     for (let i = 0; i < speciesId.length; i++) {
       hash = (hash * 31 + speciesId.charCodeAt(i)) | 0;
     }
-    return Math.abs(hash) % this.loadedSheets.length;
+    return generic[Math.abs(hash) % generic.length];
   }
 
   public getSoulDollAspect(speciesId: string, isBackView = false): number {
@@ -125,14 +146,20 @@ class PixelArtGenerator {
   private initSoulDollSpritesheet() {
     if (typeof window === 'undefined') return;
 
+    // Cada especie con arte propio tiene su hoja; el resto comparte las
+    // genericas (elegidas de forma estable a partir del id).
     const bases = [
-      '493519213_1792589298660327',
-      '647390299_1792589248743036',
-      '837023740_1792589339474861',
+      { key: 'tomo-1', file: '105515179_1792644033044389', species: 'ignisaur' },
+      { key: 'tomo-2', file: '408770211_1792644218641596', species: 'pyrodrake' },
+      { key: 'tomo-3', file: '642182396_1792644280769170', species: 'tomomusashi' },
+      { key: 'generic-1', file: '493519213_1792589298660327' },
+      { key: 'generic-2', file: '647390299_1792589248743036' },
+      { key: 'generic-3', file: '837023740_1792589339474861' },
     ];
 
     let loadedCount = 0;
     const validSheets: Array<{
+      key: string;
       frontTexture: THREE.CanvasTexture;
       backTexture: THREE.CanvasTexture;
       frontAspect: number;
@@ -144,6 +171,8 @@ class PixelArtGenerator {
       loadedCount++;
       if (loadedCount !== bases.length) return;
       this.loadedSheets = validSheets.filter(Boolean);
+      this.sheetIndex.clear();
+      this.loadedSheets.forEach((sheet, index) => this.sheetIndex.set(sheet.key, index));
       if (this.loadedSheets.length === 0) return;
       this.soulDollSpritesheetLoaded = true;
       this.onSoulDollLoadedListeners.forEach(listener => {
@@ -156,8 +185,9 @@ class PixelArtGenerator {
     };
 
     bases.forEach((base, idx) => {
+      if (base.species) this.speciesSheet.set(base.species, base.key);
       this.loadFirstAvailable(
-        [`/assets/souldolls/${base}.webp`, `/assets/souldolls/${base}.jpg`],
+        [`/assets/souldolls/${base.file}.webp`, `/assets/souldolls/${base.file}.jpg`],
         (img) => {
           const w = img.width;
           const h = img.height;
@@ -170,8 +200,9 @@ class PixelArtGenerator {
           const backAspect = backResult.canvas.width / backResult.canvas.height;
 
           validSheets[idx] = {
-            frontTexture: this.makeTexture(`sheet_${idx}_front`, frontResult.canvas),
-            backTexture: this.makeTexture(`sheet_${idx}_back`, backResult.canvas),
+            key: base.key,
+            frontTexture: this.makeTexture(`sheet_${base.key}_front`, frontResult.canvas),
+            backTexture: this.makeTexture(`sheet_${base.key}_back`, backResult.canvas),
             frontAspect,
             backAspect,
             avatarUrl: frontResult.canvas.toDataURL(),

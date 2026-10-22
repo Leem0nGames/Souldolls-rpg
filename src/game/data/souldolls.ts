@@ -2,14 +2,14 @@ import { SoulDollSpecies, SoulDollInstance } from '../../types/game';
 import { createMoveInstance } from './moves';
 
 export const SOULDOLL_SPECIES: Record<string, SoulDollSpecies> = {
-  // 1. Ignisaur -> Pyrodrake
+  // 1. Tomo -> Tomoe -> Tomoe Musashi
   ignisaur: {
     id: 'ignisaur',
-    name: 'Ignisaur',
+    name: 'Tomo',
     stage: 1,
     types: ['Fire'],
     baseStats: { hp: 55, atk: 62, def: 50, spAtk: 65, spDef: 55, spd: 58 },
-    description: 'Un reptil ígneo que porta una gema ardiente en su pecho. Sus llamas crecen según el fervor de su alma.',
+    description: 'Una lagartija de brasa que porta una gema ardiente en el pecho. Sus llamas crecen según el fervor de su alma.',
     catchRate: 190,
     baseExpReward: 64,
     evolution: { level: 16, evolvesInto: 'pyrodrake' },
@@ -22,13 +22,14 @@ export const SOULDOLL_SPECIES: Record<string, SoulDollSpecies> = {
   },
   pyrodrake: {
     id: 'pyrodrake',
-    name: 'Pyrodrake',
+    name: 'Tomoe',
     stage: 2,
     types: ['Fire', 'Wind'],
     baseStats: { hp: 80, atk: 95, def: 75, spAtk: 105, spDef: 80, spd: 90 },
-    description: 'Forma ascendida de Ignisaur. Ha despertado alas de fuego astral capaces de evaporar lagos con un solo aleteo.',
+    description: 'Forma ascendida de Tomo. Ha despertado alas de fuego astral capaces de evaporar lagos con un solo aleteo.',
     catchRate: 45,
     baseExpReward: 180,
+    evolution: { level: 26, evolvesInto: 'tomomusashi' },
     learnset: [
       { level: 1, moveId: 'ember' },
       { level: 6, moveId: 'flame_claw' },
@@ -37,6 +38,27 @@ export const SOULDOLL_SPECIES: Record<string, SoulDollSpecies> = {
       { level: 24, moveId: 'hurricane_drill' }
     ],
     colorTheme: { primary: '#dc2626', secondary: '#ea580c', glow: '#fde047' }
+  },
+  tomomusashi: {
+    id: 'tomomusashi',
+    name: 'Tomoe Musashi',
+    stage: 3,
+    types: ['Fire', 'Light'],
+    baseStats: { hp: 108, atk: 122, def: 98, spAtk: 138, spDef: 108, spd: 116 },
+    description: 'Forma final de la linea de Tomo. Su hoja astral corta el aire y deja una estela de luz alli donde pasa.',
+    catchRate: 32,
+    baseExpReward: 320,
+    learnset: [
+      { level: 1, moveId: 'ember' },
+      { level: 6, moveId: 'flame_claw' },
+      { level: 12, moveId: 'inferno_surge' },
+      { level: 18, moveId: 'sky_slash' },
+      { level: 22, moveId: 'astral_beam' },
+      { level: 26, moveId: 'hurricane_drill' },
+      { level: 30, moveId: 'soul_purge' },
+      { level: 36, moveId: 'divine_radiance' }
+    ],
+    colorTheme: { primary: '#f59e0b', secondary: '#b91c1c', glow: '#fef3c7' }
   },
 
   // 2. Aquafox -> Tidewraith

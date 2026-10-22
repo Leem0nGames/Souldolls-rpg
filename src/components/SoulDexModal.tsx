@@ -104,9 +104,9 @@ export const SoulDexModal: React.FC = () => {
                       <div>
                         <div className="font-pixel text-[11px] text-white flex items-center gap-2">
                           <span>{seen ? species.name : '???'}</span>
-                          {species.stage === 2 && seen && (
+                          {species.stage > 1 && seen && (
                             <span className="text-[8px] font-pixel bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1 py-0.2 rounded">
-                              ASCENDIDO
+                              {species.stage === 2 ? 'ASCENDIDO' : 'ASCENDIDO II'}
                             </span>
                           )}
                         </div>

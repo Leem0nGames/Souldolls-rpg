@@ -150,7 +150,7 @@ export const PartyModal: React.FC = () => {
                     ))}
                   </div>
                   <div className="font-pixel text-[9px] text-slate-400">
-                    Fase: {species.stage === 2 ? 'Ascendida (Fase 2)' : 'Básica'} • EXP: {currentDoll.currentXp}
+                    Fase: {species.stage === 1 ? 'Básica' : `Ascendida (Fase ${species.stage})`} • EXP: {currentDoll.currentXp}
                   </div>
                 </div>
               </div>
